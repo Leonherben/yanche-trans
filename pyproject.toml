@@ -1,0 +1,30 @@
+[project]
+name = "quicktrans"
+version = "0.1.0"
+description = "轻量级、跨平台 (Linux & Windows) 桌面划词翻译工具，聚合大模型与传统翻译 API"
+readme = "README.md"
+authors = [
+    { name = "LeonHerben", email = "herberten16@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+    "pynput>=1.8.2",
+    "pyperclip>=1.11.0",
+    "pyside6>=6.11.2",
+]
+
+[project.scripts]
+quicktrans = "quicktrans:main"
+quicktrans-cli = "quicktrans.cli.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-mock>=3.16.0",
+]
