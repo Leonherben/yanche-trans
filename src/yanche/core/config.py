@@ -95,6 +95,13 @@ def _default_providers() -> Dict[str, ProviderConfig]:
             api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
             model="deepseek-chat",
         ),
+        "microsoft": ProviderConfig(
+            name="microsoft",
+            provider_type="microsoft",
+            base_url="https://www.bing.com/ttranslatev3",
+            api_key="",
+            model="bing-web",
+        ),
         "openai": ProviderConfig(
             name="openai",
             provider_type="openai_compatible",
@@ -145,44 +152,20 @@ class AppConfig(BaseModel):
         config_path = path or cls.get_default_config_path()
         if not config_path.exists():
             instance = cls()
-            # 预设常用供应商模板
-            instance.providers = {
-                "deepseek": ProviderConfig(
-                    name="deepseek",
-                    provider_type="openai_compatible",
-                    base_url="https://api.deepseek.com/v1",
-                    api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-                    model="deepseek-chat",
-                ),
-                "openai": ProviderConfig(
-                    name="openai",
-                    provider_type="openai_compatible",
-                    base_url="https://api.openai.com/v1",
-                    api_key=os.environ.get("OPENAI_API_KEY", ""),
-                    model="gpt-4o-mini",
-                ),
-                "zhipu": ProviderConfig(
-                    name="zhipu",
-                    provider_type="openai_compatible",
-                    base_url="https://open.bigmodel.cn/api/paas/v4",
-                    api_key=os.environ.get("ZHIPU_API_KEY", ""),
-                    model="glm-4-flash",
-                ),
-                "custom": ProviderConfig(
-                    name="custom",
-                    provider_type="openai_compatible",
-                    base_url="http://localhost:11434/v1",
-                    api_key="ollama",
-                    model="qwen2.5:1.5b",
-                ),
-            }
+            instance.providers = _default_providers()
             instance.save(config_path)
             return instance
 
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return cls.model_validate(data)
+            instance = cls.model_validate(data)
+            # 自动补全缺失的内置提供商（如新增的 microsoft）
+            defaults = _default_providers()
+            for k, v in defaults.items():
+                if k not in instance.providers:
+                    instance.providers[k] = v
+            return instance
         except Exception:
             # 读取损坏时安全回退，不抛致命崩溃
             return cls()

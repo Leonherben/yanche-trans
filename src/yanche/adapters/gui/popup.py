@@ -599,7 +599,7 @@ class PopupBubble(QWidget):
         self.on_save_config = on_save_config
         self.on_clear_cache = on_clear_cache
         self.on_update_selection_config = on_update_selection_config
-        self.available_providers = available_providers or ["deepseek", "openai", "zhipu", "custom"]
+        self.available_providers = available_providers or ["deepseek", "microsoft", "openai", "zhipu", "custom"]
         self._current_provider = "deepseek"
         self._last_requested_text = ""
         self._current_result: Optional[TranslationResult] = None
