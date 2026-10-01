@@ -24,6 +24,10 @@ def test_popup_init(qapp):
     popup = PopupBubble(config)
     assert popup.width() >= 320
     assert not popup.isVisible()
+    assert popup._current_provider == "microsoft"
+    popup.set_active_provider("deepseek")
+    assert popup._current_provider == "deepseek"
+    assert "deepseek" in popup.provider_btn.text()
     popup.close()
 
 

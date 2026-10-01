@@ -78,7 +78,10 @@ def main() -> None:
         print("\n=== 可用的翻译服务提供商 ===")
         for name, p in config.providers.items():
             mark = "★ (默认)" if name == config.default_provider else " "
-            has_key = "✔ 已配置 Key" if p.api_key else "✖ 未配置 Key"
+            if p.provider_type == "microsoft" and not p.api_key:
+                has_key = "✔ 免配置 (网页)"
+            else:
+                has_key = "✔ 已配置 Key" if p.api_key else "✖ 未配置 Key"
             print(f"{mark} {name:<12} | 模型: {p.model:<16} | {has_key} | {p.base_url}")
         print()
         return

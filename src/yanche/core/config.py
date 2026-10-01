@@ -128,7 +128,7 @@ def _default_providers() -> Dict[str, ProviderConfig]:
 
 class AppConfig(BaseModel):
     """应用总体配置"""
-    default_provider: str = "deepseek"
+    default_provider: str = "microsoft"
     default_source_lang: str = "auto"
     default_target_lang: str = "zh-CN"
     enable_cache: bool = True

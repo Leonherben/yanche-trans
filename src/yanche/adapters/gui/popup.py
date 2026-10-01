@@ -590,6 +590,7 @@ class PopupBubble(QWidget):
         on_clear_cache: Optional[Callable[[], None]] = None,
         on_update_selection_config: Optional[Callable[[], None]] = None,
         available_providers: Optional[list[str]] = None,
+        default_provider: str = "microsoft",
     ) -> None:
         super().__init__()
         self.config = config
@@ -599,8 +600,8 @@ class PopupBubble(QWidget):
         self.on_save_config = on_save_config
         self.on_clear_cache = on_clear_cache
         self.on_update_selection_config = on_update_selection_config
-        self.available_providers = available_providers or ["deepseek", "microsoft", "openai", "zhipu", "custom"]
-        self._current_provider = "deepseek"
+        self.available_providers = available_providers or ["microsoft", "deepseek", "openai", "zhipu", "custom"]
+        self._current_provider = default_provider
         self._last_requested_text = ""
         self._current_result: Optional[TranslationResult] = None
 
@@ -1294,6 +1295,12 @@ class PopupBubble(QWidget):
                 self._current_result.original_text if self._current_result else ""
             )
             self.on_switch_provider(provider_name, text_to_translate)
+
+    def set_active_provider(self, provider_name: str) -> None:
+        """更新当前生效的翻译引擎显示"""
+        self._current_provider = provider_name
+        if hasattr(self, "provider_btn"):
+            self.provider_btn.setText(f"{provider_name} ▾")
 
     def display_loading(self, text: str, cursor_x: int, cursor_y: int) -> None:
         """显示加载状态并智能定位（未固定时避让光标，固定时坚守坐标）"""

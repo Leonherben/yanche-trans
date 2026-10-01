@@ -61,6 +61,7 @@ class 言澈翻译App(QObject):
             on_clear_cache=self.cache.clear,
             on_update_selection_config=self._reload_listeners,
             available_providers=list(self.config.providers.keys()),
+            default_provider=self.config.default_provider,
         )
         self.popup.closed.connect(self._on_popup_closed)
         self.tray = 言澈翻译Tray(
@@ -205,6 +206,7 @@ class 言澈翻译App(QObject):
         self.active_provider_cfg = self.config.get_active_provider()
         self.translator = create_translator(self.active_provider_cfg)
         self.tray.update_active_provider(provider_name)
+        self.popup.set_active_provider(provider_name)
 
     def retranslate_text(self, text: str) -> None:
         """从浮窗手动编辑或即时查词触发就地重新翻译"""
