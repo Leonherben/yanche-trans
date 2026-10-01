@@ -85,3 +85,16 @@ def test_timeout_handling(mock_post, mock_provider_config):
 
     assert not res.is_success()
     assert "请求超时" in res.translated_text
+
+
+def test_socks_proxy_scheme_healing(monkeypatch):
+    from yanche.core.translator.openai_compatible import create_safe_http_client
+
+    # 模拟 Linux Mint/GNOME 桌面环境设置的 socks:// 协议头
+    monkeypatch.setenv("ALL_PROXY", "socks://127.0.0.1:7890/")
+    monkeypatch.setenv("all_proxy", "socks://127.0.0.1:7890/")
+
+    # 验证客户端创建不会因为未知协议头崩溃
+    client = create_safe_http_client(timeout_seconds=5.0)
+    assert client is not None
+    client.close()

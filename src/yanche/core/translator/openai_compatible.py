@@ -4,12 +4,31 @@
 """
 
 from __future__ import annotations
+import os
 import time
 from typing import Tuple
 import httpx
 from yanche.core.config import ProviderConfig
 from yanche.core.models import TranslationRequest, TranslationResult
 from yanche.core.translator.base import BaseTranslator
+
+
+def normalize_proxy_env() -> None:
+    """自动将 Linux 桌面环境下常见的 socks:// 转换为 httpx 识别的 socks5:// 协议头"""
+    for key in ("ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
+        val = os.environ.get(key)
+        if val and val.startswith("socks://"):
+            os.environ[key] = "socks5://" + val[len("socks://"):]
+
+
+def create_safe_http_client(timeout_seconds: float) -> httpx.Client:
+    """创建具备异常代理自愈能力的 HTTP 客户端"""
+    normalize_proxy_env()
+    try:
+        return httpx.Client(timeout=timeout_seconds)
+    except Exception:
+        # 当系统代理协议不兼容或损坏时，安全降级为不读取环境代理直连
+        return httpx.Client(timeout=timeout_seconds, trust_env=False)
 
 
 class OpenAICompatibleTranslator(BaseTranslator):
@@ -62,7 +81,7 @@ class OpenAICompatibleTranslator(BaseTranslator):
 
         start_time = time.perf_counter()
         try:
-            with httpx.Client(timeout=self.config.timeout_seconds) as client:
+            with create_safe_http_client(self.config.timeout_seconds) as client:
                 response = client.post(self.endpoint, headers=headers, json=payload)
                 latency = (time.perf_counter() - start_time) * 1000
 

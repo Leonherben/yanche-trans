@@ -13,6 +13,7 @@ dependencies = [
     "pynput>=1.8.2",
     "pyperclip>=1.11.0",
     "pyside6>=6.11.2",
+    "socksio>=1.0.0",
 ]
 
 [project.scripts]
