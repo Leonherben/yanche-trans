@@ -1,0 +1,98 @@
+name: Release & Multiplatform Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag Name (e.g. v0.1.0)'
+        required: false
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            artifact_pattern: dist/*.tar.gz
+          - os: windows-latest
+            platform: windows-x86_64
+            artifact_pattern: dist/*.zip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-cursor0 xsel
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies & PyInstaller
+        run: uv sync --dev
+
+      - name: Build standalone release package
+        run: uv run python scripts/build.py
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yanche-release-${{ matrix.platform }}
+          path: ${{ matrix.artifact_pattern }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine Tag Name
+        id: tag_info
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_download
+          merge-multiple: true
+
+      - name: Display downloaded assets
+        run: ls -lh release_download/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag_info.outputs.TAG }}
+          name: 言蹊翻译 (YanXi Trans) ${{ steps.tag_info.outputs.TAG }}
+          files: release_download/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

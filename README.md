@@ -23,7 +23,20 @@
 
 ---
 
-## 🚀 快速上手
+## 📦 软件下载 (Download & Releases)
+
+用户无需安装 Python 或任何开发环境，直接下载解压即可运行：
+
+👉 **前往 [GitHub Releases 最新发布页](https://github.com/Leonherben/yanche-trans/releases) 下载**
+
+| 操作系统 | 下载文件格式 | 安装与使用说明 |
+| :--- | :--- | :--- |
+| **Windows** (Win10 / Win11) | `yanxi-v*-windows-x86_64.zip` | 解压至任意文件夹，双击 `启动言蹊翻译.bat` 或 `yanxi.exe` 即可直接常驻系统托盘（绿色便携，无控制台黑框） |
+| **Linux** (Mint / Ubuntu / Debian 等) | `yanxi-v*-linux-x86_64.tar.gz` | 解压后直接运行 `./install.sh` 即可一键安装到系统菜单，或在解压目录下直接运行 `./yanxi` |
+
+---
+
+## 🛠️ 源码开发与构建
 
 本项目严格采用现代工具链 `uv` 纳管虚拟环境。
 
