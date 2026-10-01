@@ -34,6 +34,7 @@ hiddenimports = [
     "yanche.adapters.gui.popup",
     "yanche.adapters.gui.tray",
     "yanche.adapters.gui.theme",
+    "yanche.adapters.gui.settings_dialog",
     "yanche.adapters.selection.base",
     "yanche.adapters.selection.linux_x11",
     "yanche.adapters.selection.hotkey_fallback",

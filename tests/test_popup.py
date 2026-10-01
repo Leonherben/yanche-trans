@@ -81,6 +81,16 @@ def test_popup_switch_provider(qapp):
     popup.close()
 
 
+def test_popup_open_settings_callback(qapp):
+    opened = []
+    config = UIConfig()
+    popup = PopupBubble(config, on_open_settings=lambda: opened.append(True))
+    assert popup.on_open_settings is not None
+    popup.on_open_settings()
+    assert len(opened) == 1
+    popup.close()
+
+
 def test_popup_display_error(qapp):
     config = UIConfig()
     popup = PopupBubble(config)

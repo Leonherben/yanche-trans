@@ -35,6 +35,7 @@ from yanche.core.translator.factory import create_translator
 from yanche.core.cache.sqlite_cache import SQLiteCache
 from yanche.adapters.gui.popup import PopupBubble
 from yanche.adapters.gui.tray import 言蹊翻译Tray, 言澈翻译Tray
+from yanche.adapters.gui.settings_dialog import SettingsDialog
 from yanche.adapters.selection.base import BaseSelectionListener
 from yanche.adapters.selection.linux_x11 import LinuxX11SelectionListener
 from yanche.adapters.selection.hotkey_fallback import HotkeySelectionListener
@@ -48,6 +49,7 @@ class 言蹊翻译App(QObject):
         self.qapp = qapp
         self.config = AppConfig.load()
         self.cache = SQLiteCache()
+        self._settings_dialog: Optional[SettingsDialog] = None
 
         # 核心翻译引擎
         self.active_provider_cfg = self.config.get_active_provider()
@@ -64,6 +66,7 @@ class 言蹊翻译App(QObject):
             on_update_selection_config=self._reload_listeners,
             available_providers=list(self.config.providers.keys()),
             default_provider=self.config.default_provider,
+            on_open_settings=self.open_settings,
         )
         self.popup.closed.connect(self._on_popup_closed)
         self.tray = 言蹊翻译Tray(
@@ -76,6 +79,7 @@ class 言蹊翻译App(QObject):
             on_opacity_change=lambda o: self.popup.apply_theme(opacity=o),
             on_toggle_auto_popup=self._on_toggle_auto_popup,
             on_clear_cache=self.cache.clear,
+            on_open_settings=self.open_settings,
             on_quit=self.shutdown,
         )
 
@@ -228,6 +232,41 @@ class 言蹊翻译App(QObject):
     def set_target_lang(self, lang_code: str) -> None:
         self.config.default_target_lang = lang_code
         self.config.save()
+
+    def open_settings(self) -> None:
+        """打开偏好设置中心（支持 API、模型、快捷键、主题等可视化配置）"""
+        if self._settings_dialog is None:
+            self._settings_dialog = SettingsDialog(
+                config=self.config,
+                on_save=self.on_settings_saved,
+            )
+            self._settings_dialog.finished.connect(self._on_settings_closed)
+        self._settings_dialog.show()
+        self._settings_dialog.raise_()
+        self._settings_dialog.activateWindow()
+
+    def _on_settings_closed(self, result: int) -> None:
+        self._settings_dialog = None
+
+    def on_settings_saved(self, new_config: AppConfig) -> None:
+        """设置保存后的热重载"""
+        self.config = new_config
+        self.active_provider_cfg = self.config.get_active_provider()
+        self.translator = create_translator(self.active_provider_cfg)
+
+        # 同步托盘与浮窗的提供商列表与选中状态
+        self.tray.update_active_provider(self.config.default_provider)
+        self.popup.available_providers = list(self.config.providers.keys())
+        self.popup.set_active_provider(self.config.default_provider)
+
+        # 同步主题与透明度
+        self.popup.apply_theme(
+            theme_name=self.config.ui.theme,
+            opacity=self.config.ui.window_opacity,
+        )
+
+        # 重新加载热键与选词监听器
+        self._reload_listeners()
 
     def shutdown(self) -> None:
         """安全释放所有资源"""

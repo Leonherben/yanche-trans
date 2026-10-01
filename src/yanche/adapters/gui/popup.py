@@ -591,6 +591,7 @@ class PopupBubble(QWidget):
         on_update_selection_config: Optional[Callable[[], None]] = None,
         available_providers: Optional[list[str]] = None,
         default_provider: str = "microsoft",
+        on_open_settings: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -600,6 +601,7 @@ class PopupBubble(QWidget):
         self.on_save_config = on_save_config
         self.on_clear_cache = on_clear_cache
         self.on_update_selection_config = on_update_selection_config
+        self.on_open_settings = on_open_settings
         self.available_providers = available_providers or ["microsoft", "deepseek", "openai", "zhipu", "custom"]
         self._current_provider = default_provider
         self._last_requested_text = ""
@@ -1250,11 +1252,16 @@ class PopupBubble(QWidget):
 
         menu.addSeparator()
 
-        # 8. 恢复默认尺寸
+        # 8. 偏好设置
+        if self.on_open_settings:
+            act_settings = menu.addAction("⚙ 偏好设置...")
+            act_settings.triggered.connect(self.on_open_settings)
+
+        # 9. 恢复默认尺寸
         act_reset = menu.addAction("恢复默认尺寸")
         act_reset.triggered.connect(self._reset_window_geometry)
 
-        # 9. 清空本地缓存
+        # 10. 清空本地缓存
         if self.on_clear_cache:
             act_cache = menu.addAction("清空缓存")
             act_cache.triggered.connect(self._handle_clear_cache)
@@ -1283,6 +1290,11 @@ class PopupBubble(QWidget):
             mark = "✓ " if p == curr else "   "
             act = menu.addAction(f"{mark}{p}")
             act.triggered.connect(lambda checked, name=p: self._handle_provider_switch(name))
+
+        if self.on_open_settings:
+            menu.addSeparator()
+            act_manage = menu.addAction("⚙ 管理服务与 API Key...")
+            act_manage.triggered.connect(self.on_open_settings)
 
         pos = self.provider_btn.mapToGlobal(QPoint(0, self.provider_btn.height() + 2))
         menu.exec(pos)
