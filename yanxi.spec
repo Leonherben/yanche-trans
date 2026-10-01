@@ -174,7 +174,7 @@ exe_cli = EXE(
 
 # 过滤不需要的 Qt 动态库 (QtQuick, QtQml, QtPdf, QtVirtualKeyboard, QtOpenGL 等)
 def filter_binaries(binaries):
-    unwanted = ("quick", "qml", "pdf", "virtualkeyboard", "opengl")
+    unwanted = ("quick", "qml", "pdf", "virtualkeyboard", "qt6opengl")
     return [b for b in binaries if not any(u in b[0].lower() for u in unwanted)]
 
 # 3. 收集并整合至同一目录 dist/yanxi

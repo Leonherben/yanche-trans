@@ -13,6 +13,12 @@ import tarfile
 import zipfile
 from pathlib import Path
 
+# 确保在 Windows 或非 UTF-8 控制台下输出 Emoji 和中文不抛出 UnicodeEncodeError
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 
 def get_version(project_root: Path) -> str:
     init_file = project_root / "src" / "yanxi" / "__init__.py"
@@ -99,14 +105,13 @@ echo "✅ 言蹊翻译 已完全卸载。"
 
 def generate_windows_helpers(bundle_dir: Path) -> None:
     """生成 Windows 下的便捷启动与说明文件"""
-    launcher = bundle_dir / "启动言蹊翻译.bat"
-    launcher.write_text(
-        """@echo off
+    bat_content = """@echo off
+chcp 65001 >nul 2>&1
 start "" "%~dp0yanxi.exe"
 exit
-""",
-        encoding="gbk",
-    )
+"""
+    (bundle_dir / "启动言蹊翻译.bat").write_text(bat_content, encoding="utf-8")
+    (bundle_dir / "run_yanxi.bat").write_text(bat_content, encoding="utf-8")
 
     readme = bundle_dir / "README_使用说明.txt"
     readme.write_text(
