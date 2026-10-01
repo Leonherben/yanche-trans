@@ -5,7 +5,21 @@
 2. 浮窗阴影、样式排版、Markdown 多行换行、一键复制到剪贴板等交互体验。
 """
 
+import os
 import sys
+
+def ensure_xcb_cursor_loaded() -> None:
+    """Linux 平台下若缺少 libxcb-cursor0 则自动从 ~/.local/lib 加载并自愈重启"""
+    if sys.platform.startswith("linux"):
+        _user_lib = os.path.expanduser("~/.local/lib")
+        if os.path.exists(os.path.join(_user_lib, "libxcb-cursor.so.0")):
+            _ld = os.environ.get("LD_LIBRARY_PATH", "")
+            if _user_lib not in _ld.split(":"):
+                os.environ["LD_LIBRARY_PATH"] = f"{_user_lib}:{_ld}" if _ld else _user_lib
+                if not os.environ.get("_YANCHE_RESTARTED"):
+                    os.environ["_YANCHE_RESTARTED"] = "1"
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -119,6 +133,7 @@ class SandboxWindow(QMainWindow):
 
 
 def main() -> None:
+    ensure_xcb_cursor_loaded()
     app = QApplication(sys.argv)
     window = SandboxWindow()
     window.show()
