@@ -29,6 +29,8 @@ class PopupBubble(QWidget):
     # 异步触发信号（线程安全）
     show_translation_signal = Signal(object)
     show_loading_signal = Signal(str, int, int)
+    dismiss_signal = Signal(int, int)
+    closed = Signal()
 
     def __init__(self, config: UIConfig, on_retranslate: Optional[Callable[[str], None]] = None) -> None:
         super().__init__()
@@ -58,6 +60,7 @@ class PopupBubble(QWidget):
         # 绑定信号
         self.show_translation_signal.connect(self.display_result)
         self.show_loading_signal.connect(self.display_loading)
+        self.dismiss_signal.connect(self.dismiss_if_outside)
 
     def _init_ui(self) -> None:
         self.setMinimumWidth(320)
@@ -211,12 +214,12 @@ class PopupBubble(QWidget):
         preview = orig if len(orig) <= 60 else orig[:57] + "..."
         self.original_label.setText(preview)
 
-        # 格式化输出译文（保留换行）
-        html_content = result.translated_text.replace("\n", "<br>")
+        # 格式化输出译文（成功使用 Markdown 原生排版，失败呈现错误样式）
         if not result.is_success():
-            self.text_browser.setHtml(f"<span style='color: #f85149;'>{html_content}</span>")
+            html_err = result.translated_text.replace("\n", "<br>")
+            self.text_browser.setHtml(f"<span style='color: #f85149; font-weight: 500;'>{html_err}</span>")
         else:
-            self.text_browser.setHtml(f"<span style='color: #e6edf3;'>{html_content}</span>")
+            self.text_browser.setMarkdown(result.translated_text)
 
         # 重新自适应高度并确保可见
         self.adjustSize()
@@ -224,6 +227,16 @@ class PopupBubble(QWidget):
 
         if not self._is_pinned and self.config.auto_hide_seconds > 0:
             self.auto_hide_timer.start(self.config.auto_hide_seconds * 1000)
+
+    def dismiss_if_outside(self, cursor_x: int, cursor_y: int) -> None:
+        """如果浮窗正处于显示状态且未钉住，当点击落在浮窗几何区域外部时平滑收起"""
+        if self.isVisible() and not self._is_pinned:
+            if not self.frameGeometry().contains(QPoint(cursor_x, cursor_y)):
+                self.hide()
+
+    def hideEvent(self, event) -> None:
+        self.closed.emit()
+        super().hideEvent(event)
 
     def adjust_position(self, cursor_x: int, cursor_y: int) -> None:
         """根据当前鼠标位置和多屏幕边界进行智能边缘检测避让"""

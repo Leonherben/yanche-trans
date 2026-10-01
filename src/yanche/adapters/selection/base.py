@@ -11,14 +11,28 @@ from typing import Callable, Optional, Tuple
 SelectionCallback = Callable[[str, Tuple[int, int]], None]
 
 
+EmptyClickCallback = Callable[[Tuple[int, int]], None]
+
+
 class BaseSelectionListener(ABC):
     """跨平台选词监听器基类"""
 
-    def __init__(self, callback: SelectionCallback, min_length: int = 1, max_length: int = 3000) -> None:
+    def __init__(
+        self,
+        callback: SelectionCallback,
+        min_length: int = 1,
+        max_length: int = 3000,
+        on_empty_click: Optional[EmptyClickCallback] = None,
+    ) -> None:
         self.callback = callback
         self.min_length = min_length
         self.max_length = max_length
+        self.on_empty_click = on_empty_click
         self._is_running = False
+
+    def reset_last_selection(self) -> None:
+        """重置上次选词记录（在浮窗关闭或取消选中时调用）"""
+        pass
 
     def sanitize_text(self, text: str) -> Optional[str]:
         """对获取到的选中文本进行合规性清洗与边界过滤"""

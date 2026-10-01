@@ -34,3 +34,47 @@ def test_sanitize_pure_symbols():
 def test_sanitize_too_long():
     listener = DummySelectionListener(lambda text, pos: None, min_length=1, max_length=10)
     assert listener.sanitize_text("this is too long text") is None
+
+
+def test_linux_x11_repeat_selection_and_reset(mocker):
+    from yanche.adapters.selection.linux_x11 import LinuxX11SelectionListener
+
+    callbacks = []
+    empty_clicks = []
+
+    listener = LinuxX11SelectionListener(
+        callback=lambda text, pos: callbacks.append((text, pos)),
+        repeat_threshold_seconds=1.5,
+        debounce_ms=0,
+        on_empty_click=lambda pos: empty_clicks.append(pos),
+    )
+
+    # 1. 模拟第一次划词 "hello"
+    mocker.patch.object(listener, "_get_primary_selection", return_value="hello")
+    mocker.patch("time.time", side_effect=[100.0, 100.0, 100.0])
+    listener._process_selection(100, 200)
+    assert len(callbacks) == 1
+    assert callbacks[0] == ("hello", (100, 200))
+
+    # 2. 紧接着在阈值内划选相同内容 "hello"（应忽略）
+    mocker.patch("time.time", side_effect=[100.5, 100.5])
+    listener._process_selection(100, 200)
+    assert len(callbacks) == 1
+
+    # 3. 超过 1.5 秒阈值后再次划选相同内容 "hello"（应允许再次触发）
+    mocker.patch("time.time", side_effect=[102.0, 102.0])
+    listener._process_selection(110, 210)
+    assert len(callbacks) == 2
+    assert callbacks[1] == ("hello", (110, 210))
+
+    # 4. 手动重置后划选相同内容（应立即触发）
+    listener.reset_last_selection()
+    mocker.patch("time.time", side_effect=[102.2, 102.2])
+    listener._process_selection(120, 220)
+    assert len(callbacks) == 3
+
+    # 5. 模拟普通单击（未划选有效文本），应触发 on_empty_click
+    mocker.patch.object(listener, "_get_primary_selection", return_value="")
+    listener._process_selection(50, 60)
+    assert len(empty_clicks) == 1
+    assert empty_clicks[0] == (50, 60)

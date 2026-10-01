@@ -22,12 +22,16 @@ class HotkeySelectionListener(BaseSelectionListener):
         hotkey_str: str = "<ctrl>+<alt>+t",
         min_length: int = 1,
         max_length: int = 3000,
+        on_empty_click: Optional[Callable[[Tuple[int, int]], None]] = None,
     ) -> None:
-        super().__init__(callback, min_length, max_length)
+        super().__init__(callback, min_length, max_length, on_empty_click=on_empty_click)
         self.hotkey_str = hotkey_str
         self._keyboard_controller = keyboard.Controller()
         self._mouse_controller = mouse.Controller()
         self._hotkey_listener: Optional[keyboard.GlobalHotKeys] = None
+
+    def reset_last_selection(self) -> None:
+        pass
 
     def _trigger_copy_and_capture(self) -> None:
         """热键触发后的提取流水线"""

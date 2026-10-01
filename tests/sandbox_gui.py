@@ -76,7 +76,7 @@ class SandboxWindow(QMainWindow):
         # 模拟 300ms 后 API 返回
         result = TranslationResult(
             original_text=self.text_input.text(),
-            translated_text="人工智能正在重塑软件开发范式。\n\n• 核心特征：代码生成与智能感知\n• 适配框架：PySide6 / Qt",
+            translated_text="**人工智能**正在重塑现代软件开发范式。\n\n- **核心特征**：代码自动补全与架构感知\n- **技术底座**：`Python 3.12` + `PySide6`\n- **音标参考**：/ˌɑːtɪˈfɪʃl ɪnˈtelɪdʒəns/",
             source_lang="en",
             target_lang="zh-CN",
             provider="deepseek-chat",

@@ -39,6 +39,7 @@ class 言澈翻译App(QObject):
 
         # 悬浮窗与托盘
         self.popup = PopupBubble(self.config.ui)
+        self.popup.closed.connect(self._on_popup_closed)
         self.tray = 言澈翻译Tray(
             config=self.config,
             on_toggle_listener=self.set_listener_enabled,
@@ -60,6 +61,16 @@ class 言澈翻译App(QObject):
         signal.signal(signal.SIGINT, lambda sig, frame: self.shutdown())
         signal.signal(signal.SIGTERM, lambda sig, frame: self.shutdown())
 
+    def _on_popup_closed(self) -> None:
+        """当浮窗隐藏时重置选词记录，以便用户能再次划选相同单词"""
+        for listener in self.listeners:
+            listener.reset_last_selection()
+
+    def on_empty_click(self, cursor_pos: Tuple[int, int]) -> None:
+        """用户在空白处点击（未产生划词）时，若浮窗处于显示状态且未钉住则自动收起"""
+        x, y = cursor_pos
+        self.popup.dismiss_signal.emit(x, y)
+
     def _init_listeners(self) -> None:
         """根据当前系统环境自适应加载取词器"""
         # Linux X11 Primary 监听
@@ -69,6 +80,7 @@ class 言澈翻译App(QObject):
                 min_length=self.config.selection.min_length,
                 max_length=self.config.selection.max_length,
                 debounce_ms=self.config.selection.debounce_ms,
+                on_empty_click=self.on_empty_click,
             )
             self.listeners.append(x11_listener)
 
@@ -79,6 +91,7 @@ class 言澈翻译App(QObject):
                 hotkey_str=self.config.selection.hotkey,
                 min_length=self.config.selection.min_length,
                 max_length=self.config.selection.max_length,
+                on_empty_click=self.on_empty_click,
             )
             self.listeners.append(hotkey_listener)
 
@@ -142,11 +155,14 @@ class 言澈翻译App(QObject):
                 listener.stop()
 
     def set_provider(self, provider_name: str) -> None:
+        self.config.default_provider = provider_name
+        self.config.save()
         self.active_provider_cfg = self.config.get_active_provider()
         self.translator = create_translator(self.active_provider_cfg)
 
     def set_target_lang(self, lang_code: str) -> None:
         self.config.default_target_lang = lang_code
+        self.config.save()
 
     def shutdown(self) -> None:
         """安全释放所有资源"""
@@ -161,6 +177,9 @@ class 言澈翻译App(QObject):
         self.popup.close()
         self.tray.hide()
         self.qapp.quit()
+
+
+YanCheApp = 言澈翻译App
 
 
 def main() -> None:

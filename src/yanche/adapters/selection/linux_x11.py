@@ -22,13 +22,22 @@ class LinuxX11SelectionListener(BaseSelectionListener):
         min_length: int = 1,
         max_length: int = 3000,
         debounce_ms: int = 200,
+        repeat_threshold_seconds: float = 1.5,
+        on_empty_click: Optional[Callable[[Tuple[int, int]], None]] = None,
     ) -> None:
-        super().__init__(callback, min_length, max_length)
+        super().__init__(callback, min_length, max_length, on_empty_click=on_empty_click)
         self.debounce_ms = debounce_ms
+        self.repeat_threshold_seconds = repeat_threshold_seconds
         self._last_selected_text: str = ""
+        self._last_trigger_time: float = 0.0
         self._mouse_controller = mouse.Controller()
         self._mouse_listener: Optional[mouse.Listener] = None
         self._stop_event = threading.Event()
+
+    def reset_last_selection(self) -> None:
+        """重置上次选词记录与时间戳"""
+        self._last_selected_text = ""
+        self._last_trigger_time = 0.0
 
     def _get_primary_selection(self) -> str:
         """从 X11 Primary 剪贴板获取选中文本"""
@@ -74,11 +83,19 @@ class LinuxX11SelectionListener(BaseSelectionListener):
 
         raw_text = self._get_primary_selection()
         sanitized = self.sanitize_text(raw_text)
+        now = time.time()
 
-        if sanitized and sanitized != self._last_selected_text:
-            self._last_selected_text = sanitized
-            # 触发业务回调
-            self.callback(sanitized, (int(x), int(y)))
+        if sanitized:
+            # 文本不同，或距离上次选词触发时间超过重复判定阈值
+            if sanitized != self._last_selected_text or (now - self._last_trigger_time) >= self.repeat_threshold_seconds:
+                self._last_selected_text = sanitized
+                self._last_trigger_time = now
+                # 触发业务回调
+                self.callback(sanitized, (int(x), int(y)))
+        else:
+            # 未选中文本（普通单击或在空白处点击）
+            if self.on_empty_click:
+                self.on_empty_click((int(x), int(y)))
 
     def start(self) -> None:
         """启动监听器"""

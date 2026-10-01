@@ -6,7 +6,7 @@
 from __future__ import annotations
 from typing import Callable, Optional
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 from yanche.core.config import AppConfig
 
@@ -71,21 +71,27 @@ class 言澈翻译Tray(QSystemTrayIcon):
 
         # 2. 翻译引擎单选菜单
         provider_menu = menu.addMenu("🌐 翻译引擎 (Provider)")
+        provider_group = QActionGroup(provider_menu)
+        provider_group.setExclusive(True)
         for name in self.config.providers.keys():
             act = QAction(name, provider_menu, checkable=True)
             if name == self.config.default_provider:
                 act.setChecked(True)
             act.triggered.connect(lambda checked, p=name: self._handle_provider_changed(p))
+            provider_group.addAction(act)
             provider_menu.addAction(act)
 
         # 3. 目标语言选择
         lang_menu = menu.addMenu("🗣 目标语言")
+        lang_group = QActionGroup(lang_menu)
+        lang_group.setExclusive(True)
         langs = [("简体中文", "zh-CN"), ("English", "en"), ("日本語", "ja"), ("한국어", "ko")]
         for title, code in langs:
             act = QAction(title, lang_menu, checkable=True)
             if code == self.config.default_target_lang:
                 act.setChecked(True)
             act.triggered.connect(lambda checked, c=code: self._handle_lang_changed(c))
+            lang_group.addAction(act)
             lang_menu.addAction(act)
 
         menu.addSeparator()
