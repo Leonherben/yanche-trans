@@ -695,7 +695,7 @@ class PopupBubble(QWidget):
         top_bar.setContentsMargins(0, 0, 0, 0)
         top_bar.setSpacing(6)
 
-        self.brand_badge = QLabel("言澈", self)
+        self.brand_badge = QLabel("言蹊", self)
         self.brand_badge.setObjectName("brand_badge")
         self.brand_badge.hide()
 

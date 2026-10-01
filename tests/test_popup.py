@@ -192,7 +192,7 @@ def test_popup_copy_buttons_and_meta(qapp):
 
     # 测试元数据计数
     assert popup._format_meta("Hello World") == "2 词 · 11 字符"
-    assert popup._format_meta("言澈划词翻译") == "6 字符"
+    assert popup._format_meta("言蹊划词翻译") == "6 字符"
 
     result = TranslationResult(
         original_text="Artificial Intelligence",

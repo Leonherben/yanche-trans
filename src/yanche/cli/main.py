@@ -1,4 +1,4 @@
-"""言澈翻译 命令行工具 (CLI Prototype)
+"""言蹊翻译 命令行工具 (CLI Prototype)
 
 提供终端直接翻译、Provider 切换、API 密钥设置及连通性测试。
 """
@@ -15,7 +15,7 @@ from yanche.core.cache.sqlite_cache import SQLiteCache
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="yanche-cli",
-        description="言澈翻译 极简划词翻译核心终端工具",
+        description="言蹊翻译 极简划词翻译核心终端工具",
     )
     parser.add_argument("text", nargs="?", help="待翻译文本")
     parser.add_argument("-s", "--source", default=None, help="源语言代码（默认: auto）")
@@ -108,7 +108,7 @@ def main() -> None:
 
     # 交互模式
     if args.interactive:
-        print(f"=== 言澈翻译 交互模式 (Provider: {active_provider}) ===")
+        print(f"=== 言蹊翻译 交互模式 (Provider: {active_provider}) ===")
         print("输入待翻译内容后回车，按 Ctrl+C 或输入 'exit' 退出：\n")
         try:
             while True:

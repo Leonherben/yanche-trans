@@ -1,4 +1,4 @@
-# 言澈翻译 跨平台智能划词翻译软件 (Linux & Windows)
+# 言蹊翻译 跨平台智能划词翻译软件 (Linux & Windows)
 
 > 基于 Python 3.12 + PySide6 构建的轻量级、无焦点窃取的桌面划词翻译工具，深度聚合 OpenAI 兼容大模型 API 与传统翻译服务。
 
@@ -40,7 +40,7 @@ uv sync
 ```
 
 ### 2. 配置翻译 API Key
-言澈翻译 原生支持所有兼容 OpenAI 规范的提供商（DeepSeek、智谱 GLM、OpenAI、Moonshot/Kimi、Ollama 本地大模型等）。
+言蹊翻译 原生支持所有兼容 OpenAI 规范的提供商（DeepSeek、智谱 GLM、OpenAI、Moonshot/Kimi、Ollama 本地大模型等）。
 
 可以通过命令行快速配置 API 密钥：
 ```bash

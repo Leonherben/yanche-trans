@@ -1,6 +1,6 @@
 # 跨平台划词翻译系统架构规范 (Architecture Specification)
 
-本文档定义 言澈翻译 的系统架构与接口契约，严格遵循 Core-Adapter Decoupling（大脑与外壳解耦）原则。
+本文档定义 言蹊翻译 的系统架构与接口契约，严格遵循 Core-Adapter Decoupling（大脑与外壳解耦）原则。
 
 ---
 

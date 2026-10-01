@@ -18,7 +18,7 @@ from yanche.core.translator.base import BaseTranslator
 from yanche.core.translator.openai_compatible import create_safe_http_client
 
 
-# 语言代码映射字典 (言澈内部代码 -> 微软 API 代码)
+# 语言代码映射字典 (言蹊内部代码 -> 微软 API 代码)
 _LANG_MAP: Dict[str, str] = {
     "zh-CN": "zh-Hans",
     "zh": "zh-Hans",

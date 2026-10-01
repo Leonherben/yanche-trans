@@ -39,7 +39,7 @@ from yanche.adapters.gui.popup import PopupBubble
 class SandboxWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("言澈翻译 GUI Sandbox (无焦点测试沙盒)")
+        self.setWindowTitle("言蹊翻译 GUI Sandbox (无焦点测试沙盒)")
         self.resize(500, 320)
 
         self.ui_config = UIConfig()

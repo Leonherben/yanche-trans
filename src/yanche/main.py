@@ -1,4 +1,4 @@
-"""言澈翻译 桌面划词翻译主服务 (System Daemon & Entrypoint)
+"""言蹊翻译 桌面划词翻译主服务 (System Daemon & Entrypoint)
 
 整合系统托盘、无焦点悬浮窗、X11/热键选词监听器与 Panic Failsafe 逃生通道。
 """
@@ -9,6 +9,8 @@ import sys
 
 def ensure_xcb_cursor_loaded() -> None:
     """Linux 平台下若缺少 libxcb-cursor0 则自动从 ~/.local/lib 加载并自愈重启"""
+    if getattr(sys, "frozen", False):
+        return
     if sys.platform.startswith("linux"):
         _user_lib = os.path.expanduser("~/.local/lib")
         if os.path.exists(os.path.join(_user_lib, "libxcb-cursor.so.0")):
@@ -32,13 +34,13 @@ from yanche.core.models import TranslationRequest, TranslationResult
 from yanche.core.translator.factory import create_translator
 from yanche.core.cache.sqlite_cache import SQLiteCache
 from yanche.adapters.gui.popup import PopupBubble
-from yanche.adapters.gui.tray import 言澈翻译Tray
+from yanche.adapters.gui.tray import 言蹊翻译Tray, 言澈翻译Tray
 from yanche.adapters.selection.base import BaseSelectionListener
 from yanche.adapters.selection.linux_x11 import LinuxX11SelectionListener
 from yanche.adapters.selection.hotkey_fallback import HotkeySelectionListener
 
 
-class 言澈翻译App(QObject):
+class 言蹊翻译App(QObject):
     """主调度控制器"""
 
     def __init__(self, qapp: QApplication) -> None:
@@ -64,7 +66,7 @@ class 言澈翻译App(QObject):
             default_provider=self.config.default_provider,
         )
         self.popup.closed.connect(self._on_popup_closed)
-        self.tray = 言澈翻译Tray(
+        self.tray = 言蹊翻译Tray(
             config=self.config,
             on_open_input=lambda: QTimer.singleShot(0, self.popup.open_for_input),
             on_toggle_listener=self.set_listener_enabled,
@@ -242,7 +244,9 @@ class 言澈翻译App(QObject):
         self.qapp.quit()
 
 
-YanCheApp = 言澈翻译App
+言澈翻译App = 言蹊翻译App
+YanQiApp = 言蹊翻译App
+YanCheApp = 言蹊翻译App
 
 
 def main() -> None:
@@ -251,10 +255,10 @@ def main() -> None:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # 保持后台常驻
 
-    controller = 言澈翻译App(app)
+    controller = 言蹊翻译App(app)
     controller.tray.show()
 
-    print(f"✨ 言澈翻译 划词翻译已就绪！")
+    print(f"✨ 言蹊翻译 划词翻译已就绪！")
     print(f"   • 当前默认 Provider: {controller.config.default_provider}")
     print(f"   • 目标语言: {controller.config.default_target_lang}")
     print(f"   • 紧急逃生键: {controller.config.selection.panic_hotkey}")

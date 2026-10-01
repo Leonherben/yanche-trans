@@ -12,7 +12,7 @@ from yanche.core.config import AppConfig
 from yanche.adapters.gui.theme import AVAILABLE_THEMES, AVAILABLE_OPACITIES
 
 
-class 言澈翻译Tray(QSystemTrayIcon):
+class 言蹊翻译Tray(QSystemTrayIcon):
     """跨平台系统托盘"""
 
     def __init__(
@@ -45,7 +45,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
         self._listener_enabled = True
         self.provider_actions: dict[str, QAction] = {}
         self.lang_actions: dict[str, QAction] = {}
-        self.setToolTip("言澈翻译")
+        self.setToolTip("言蹊翻译")
         self._build_menu()
         self.activated.connect(self._on_tray_activated)
 
@@ -201,16 +201,16 @@ class 言澈翻译Tray(QSystemTrayIcon):
         if self.on_toggle_auto_popup:
             self.on_toggle_auto_popup(checked)
         tip = "已开启划选自动翻译" if checked else "已关闭划选自动翻译 (仅快捷键触发)"
-        self.showMessage("言澈翻译", tip, QSystemTrayIcon.MessageIcon.Information, 1500)
+        self.showMessage("言蹊翻译", tip, QSystemTrayIcon.MessageIcon.Information, 1500)
 
     def _handle_toggle(self) -> None:
         self._listener_enabled = not self._listener_enabled
         if self._listener_enabled:
             self.toggle_action.setText("取词服务: 开启")
-            self.setToolTip("言澈翻译")
+            self.setToolTip("言蹊翻译")
         else:
             self.toggle_action.setText("取词服务: 已暂停")
-            self.setToolTip("言澈翻译 (已暂停)")
+            self.setToolTip("言蹊翻译 (已暂停)")
 
         if self.on_toggle_listener:
             self.on_toggle_listener(self._listener_enabled)
@@ -222,7 +222,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
             act.setChecked(name == provider_name)
         if self.on_provider_change:
             self.on_provider_change(provider_name)
-        self.showMessage("言澈翻译", f"已切换翻译引擎为: {provider_name}", QSystemTrayIcon.MessageIcon.Information, 1500)
+        self.showMessage("言蹊翻译", f"已切换翻译引擎为: {provider_name}", QSystemTrayIcon.MessageIcon.Information, 1500)
 
     def update_active_provider(self, provider_name: str) -> None:
         """从外部（如浮窗）同步选中的引擎状态"""
@@ -244,3 +244,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
     def _handle_quit(self) -> None:
         if self.on_quit:
             self.on_quit()
+
+
+# 兼容历史别名
+言澈翻译Tray = 言蹊翻译Tray
