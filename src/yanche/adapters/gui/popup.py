@@ -6,9 +6,10 @@
 """
 
 from __future__ import annotations
-from typing import Optional, Callable
+from typing import Optional, Callable, List
 from PySide6.QtCore import Qt, QPoint, QTimer, Signal, QEvent, QRect
-from PySide6.QtGui import QCursor, QGuiApplication
+from PySide6.QtGui import QCursor, QGuiApplication, QKeyEvent
+
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -36,6 +37,12 @@ from yanche.adapters.gui.theme import (
     get_theme_stylesheet,
     get_theme_menu_style,
 )
+from yanche.adapters.selection.hotkey_fallback import (
+    normalize_to_pynput,
+    format_for_display,
+    is_valid_pynput_hotkey,
+)
+
 
 RESIZE_MARGIN = 10  # 边缘缩放感应带宽 (像素)
 
@@ -51,8 +58,229 @@ CURSOR_MAP = {
 }
 
 
+def qkey_to_pynput(modifiers: Qt.KeyboardModifiers, key: int, text: str = "") -> Optional[str]:
+    """将 Qt 按键事件转换为 pynput 快捷键字符串"""
+    if key in (
+        Qt.Key.Key_Control,
+        Qt.Key.Key_Alt,
+        Qt.Key.Key_Shift,
+        Qt.Key.Key_Meta,
+        Qt.Key.Key_AltGr,
+    ):
+        return None
+
+    parts = []
+    if modifiers & Qt.KeyboardModifier.ControlModifier:
+        parts.append("<ctrl>")
+    if modifiers & Qt.KeyboardModifier.AltModifier:
+        parts.append("<alt>")
+    if modifiers & Qt.KeyboardModifier.ShiftModifier:
+        parts.append("<shift>")
+    if modifiers & Qt.KeyboardModifier.MetaModifier:
+        parts.append("<cmd>")
+
+    key_part = None
+    if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
+        key_part = chr(key).lower()
+    elif Qt.Key.Key_0 <= key <= Qt.Key.Key_9:
+        key_part = chr(key)
+    elif Qt.Key.Key_F1 <= key <= Qt.Key.Key_F24:
+        key_part = f"<f{key - Qt.Key.Key_F1 + 1}>"
+    elif key == Qt.Key.Key_Space:
+        key_part = "<space>"
+    elif key == Qt.Key.Key_Tab:
+        key_part = "<tab>"
+    elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+        key_part = "<enter>"
+    elif key == Qt.Key.Key_Backspace:
+        key_part = "<backspace>"
+    elif text and len(text) == 1 and text.isprintable():
+        key_part = text.lower()
+
+    if not key_part:
+        return None
+    parts.append(key_part)
+    return "+".join(parts)
+
+
+class KeyRecorderEdit(QLineEdit):
+    """支持按键录制与手动输入的快捷键控件"""
+
+    def __init__(self, initial_hotkey: str = "", parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._is_recording: bool = False
+        self._raw_pynput: str = ""
+        self.setPlaceholderText("点击“录制”或手动输入 (如 Alt+D)")
+        self._update_style(normal=True)
+        if initial_hotkey:
+            self.set_hotkey_value(initial_hotkey)
+
+    def _update_style(self, normal: bool = True) -> None:
+        if normal:
+            self.setStyleSheet("""
+                QLineEdit {
+                    background: #161b22;
+                    color: #e6edf3;
+                    border: 1px solid #30363d;
+                    border-radius: 6px;
+                    padding: 6px 10px;
+                    font-family: monospace;
+                    font-size: 13px;
+                }
+                QLineEdit:focus {
+                    border-color: #58a6ff;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QLineEdit {
+                    background: #1c2128;
+                    color: #58a6ff;
+                    border: 2px solid #58a6ff;
+                    border-radius: 6px;
+                    padding: 5px 9px;
+                    font-family: monospace;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+            """)
+
+    def set_hotkey_value(self, hotkey: str) -> None:
+        normalized = normalize_to_pynput(hotkey)
+        self._raw_pynput = normalized
+        self.setText(format_for_display(normalized))
+
+    def get_hotkey_value(self) -> str:
+        text = self.text().strip()
+        if not text:
+            return ""
+        return normalize_to_pynput(text)
+
+    def start_recording(self) -> None:
+        self._is_recording = True
+        self._update_style(normal=False)
+        self.setPlaceholderText("请直接按下键盘组合键 (Esc 取消)...")
+        self.clear()
+        self.setFocus()
+
+    def stop_recording(self) -> None:
+        self._is_recording = False
+        self._update_style(normal=True)
+        self.setPlaceholderText("点击“录制”或手动输入 (如 Alt+D)")
+        if self._raw_pynput:
+            self.setText(format_for_display(self._raw_pynput))
+
+    def focusOutEvent(self, event) -> None:
+        if self._is_recording:
+            self.stop_recording()
+        super().focusOutEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if not self._is_recording:
+            super().keyPressEvent(event)
+            return
+
+        if event.key() == Qt.Key.Key_Escape:
+            self.stop_recording()
+            event.accept()
+            return
+
+        # 检查是否是纯修饰键
+        if event.key() in (
+            Qt.Key.Key_Control,
+            Qt.Key.Key_Alt,
+            Qt.Key.Key_Shift,
+            Qt.Key.Key_Meta,
+            Qt.Key.Key_AltGr,
+        ):
+            mods = []
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                mods.append("Ctrl")
+            if event.modifiers() & Qt.KeyboardModifier.AltModifier:
+                mods.append("Alt")
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                mods.append("Shift")
+            if event.modifiers() & Qt.KeyboardModifier.MetaModifier:
+                mods.append("Win")
+            self.setText(" + ".join(mods) + " + ...")
+            event.accept()
+            return
+
+        combo = qkey_to_pynput(event.modifiers(), event.key(), event.text())
+        if combo and is_valid_pynput_hotkey(combo):
+            self.set_hotkey_value(combo)
+            self.stop_recording()
+            self.clearFocus()
+            event.accept()
+        else:
+            event.accept()
+
+
+class HotkeyRowWidget(QFrame):
+    """单条快捷键配置行（包含输入框、录制按钮、删除按钮）"""
+
+    def __init__(
+        self,
+        hotkey_str: str,
+        on_delete: Callable[[HotkeyRowWidget], None],
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.on_delete = on_delete
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 2, 0, 2)
+        layout.setSpacing(8)
+
+        self.edit = KeyRecorderEdit(hotkey_str, self)
+        layout.addWidget(self.edit, stretch=1)
+
+        self.record_btn = QPushButton("🎙️ 录制", self)
+        self.record_btn.setToolTip("点击后直接按下键盘快捷键进行录制")
+        self.record_btn.setStyleSheet("""
+            QPushButton {
+                background: #21262d;
+                color: #c9d1d9;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background: #30363d;
+                color: #58a6ff;
+                border-color: #58a6ff;
+            }
+        """)
+        self.record_btn.clicked.connect(self.edit.start_recording)
+        layout.addWidget(self.record_btn)
+
+        self.del_btn = QPushButton("🗑️", self)
+        self.del_btn.setToolTip("删除此快捷键")
+        self.del_btn.setStyleSheet("""
+            QPushButton {
+                background: #21262d;
+                color: #8b949e;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                padding: 6px 8px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background: #b62324;
+                color: #ffffff;
+                border-color: #f85149;
+            }
+        """)
+        self.del_btn.clicked.connect(lambda: self.on_delete(self))
+        layout.addWidget(self.del_btn)
+
+    def get_hotkey(self) -> str:
+        return self.edit.get_hotkey_value()
+
+
 class HotkeySettingsDialog(QDialog):
-    """快捷键与触发方式设置对话框"""
+    """自定义全局多快捷键配置对话框"""
 
     def __init__(
         self,
@@ -63,47 +291,113 @@ class HotkeySettingsDialog(QDialog):
         super().__init__(parent)
         self.selection_config = selection_config
         self.on_save = on_save
-        self.setWindowTitle("⌨️ 快捷键设置")
-        self.setFixedSize(360, 200)
+        self.setWindowTitle("⌨️ 自定义快捷键设置")
+        self.resize(460, 420)
+        self.setMinimumSize(400, 340)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+        self.rows: list[HotkeyRowWidget] = []
         self._init_ui()
 
+    @property
+    def input_hotkey(self):
+        """兼容原有单快捷键属性访问与测试用例"""
+        if self.rows:
+            return self.rows[0].edit
+        return None
+
     def _init_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(12)
-
-        lbl = QLabel("全局翻译热键 (选词后按下触发):", self)
-        lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
-        layout.addWidget(lbl)
-
-        self.input_hotkey = QLineEdit(self.selection_config.hotkey, self)
-        self.input_hotkey.setPlaceholderText("<alt>+d")
-        self.input_hotkey.setStyleSheet("""
-            QLineEdit {
-                background: #161b22;
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #0d1117;
                 color: #e6edf3;
-                border: 1px solid #30363d;
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-family: monospace;
-                font-size: 13px;
             }
-            QLineEdit:focus {
-                border-color: #58a6ff;
+            QLabel {
+                color: #e6edf3;
+            }
+            QScrollArea {
+                background: transparent;
+                border: none;
             }
         """)
-        layout.addWidget(self.input_hotkey)
 
-        # 推荐预设按钮
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(18, 16, 18, 16)
+        main_layout.setSpacing(10)
+
+        # 标题与使用说明
+        title_lbl = QLabel("⌨️ 全局翻译快捷键列表", self)
+        title_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #58a6ff;")
+        main_layout.addWidget(title_lbl)
+
+        desc_lbl = QLabel("支持配置多个自定义全局快捷键（同时并行生效）。划选文本后按下其中任一快捷键均可触发翻译：", self)
+        desc_lbl.setWordWrap(True)
+        desc_lbl.setStyleSheet("font-size: 12px; color: #8b949e; line-height: 1.4;")
+        main_layout.addWidget(desc_lbl)
+
+        # 快捷键列表滚动区域
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: 1px solid #30363d; border-radius: 8px; background: #0d1117; }")
+
+        self.list_container = QWidget()
+        self.list_container.setStyleSheet("background: transparent;")
+        self.list_layout = QVBoxLayout(self.list_container)
+        self.list_layout.setContentsMargins(8, 8, 8, 8)
+        self.list_layout.setSpacing(4)
+        self.list_layout.addStretch()
+
+        scroll.setWidget(self.list_container)
+        main_layout.addWidget(scroll, stretch=1)
+
+        # 添加已有快捷键
+        initial_keys = self.selection_config.get_all_hotkeys()
+        for k in initial_keys:
+            self._add_row(k)
+
+        # “+ 添加快捷键” 按钮
+        add_bar = QHBoxLayout()
+        self.add_btn = QPushButton("➕ 添加快捷键", self)
+        self.add_btn.setStyleSheet("""
+            QPushButton {
+                background: #21262d;
+                color: #58a6ff;
+                border: 1px dashed #388bfd;
+                border-radius: 6px;
+                padding: 6px 14px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: #1f242c;
+                border-color: #58a6ff;
+                color: #79c0ff;
+            }
+        """)
+        self.add_btn.clicked.connect(lambda: self._add_row("", start_recording=True))
+        add_bar.addWidget(self.add_btn)
+        add_bar.addStretch()
+        main_layout.addLayout(add_bar)
+
+        # 常用预设推荐栏
+        preset_box = QVBoxLayout()
+        preset_box.setSpacing(4)
+        preset_title = QLabel("快速添加常用预设：", self)
+        preset_title.setStyleSheet("font-size: 11px; color: #8b949e;")
+        preset_box.addWidget(preset_title)
+
         preset_bar = QHBoxLayout()
         preset_bar.setSpacing(6)
-        presets = [("Alt + D (推荐)", "<alt>+d"), ("Ctrl+Alt+T", "<ctrl>+<alt>+t"), ("Alt + Q", "<alt>+q")]
+        presets = [
+            ("Alt + D (推荐)", "<alt>+d"),
+            ("Ctrl + Alt + T", "<ctrl>+<alt>+t"),
+            ("Alt + Q", "<alt>+q"),
+            ("F2", "<f2>"),
+        ]
         for title, keycode in presets:
-            btn = QPushButton(title, self)
+            btn = QPushButton(f"+ {title}", self)
             btn.setStyleSheet("""
                 QPushButton {
-                    background: #21262d;
+                    background: #161b22;
                     color: #c9d1d9;
                     border: 1px solid #30363d;
                     border-radius: 4px;
@@ -113,19 +407,57 @@ class HotkeySettingsDialog(QDialog):
                 QPushButton:hover {
                     background: #30363d;
                     color: #58a6ff;
+                    border-color: #58a6ff;
                 }
             """)
-            btn.clicked.connect(lambda checked, k=keycode: self.input_hotkey.setText(k))
+            btn.clicked.connect(lambda checked, k=keycode: self._quick_add_preset(k))
             preset_bar.addWidget(btn)
-        layout.addLayout(preset_bar)
+        preset_bar.addStretch()
+        preset_box.addLayout(preset_bar)
+        main_layout.addLayout(preset_box)
 
-        layout.addStretch()
+        # 提示标签
+        self.status_lbl = QLabel("💡 提示：点击输入框直接按下键盘组合键即可录制，支持任意按键。", self)
+        self.status_lbl.setStyleSheet("font-size: 11px; color: #8b949e;")
+        main_layout.addWidget(self.status_lbl)
 
-        # 按钮栏
+        # 底部操作栏
         btn_box = QHBoxLayout()
+
+        reset_btn = QPushButton("恢复默认 (Alt+D)", self)
+        reset_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #8b949e;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                color: #f85149;
+                border-color: #da3633;
+            }
+        """)
+        reset_btn.clicked.connect(self._reset_to_default)
+        btn_box.addWidget(reset_btn)
+
         btn_box.addStretch()
 
         cancel_btn = QPushButton("取消", self)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: #21262d;
+                color: #c9d1d9;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                padding: 5px 14px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background: #30363d;
+            }
+        """)
         cancel_btn.clicked.connect(self.reject)
         btn_box.addWidget(cancel_btn)
 
@@ -134,8 +466,10 @@ class HotkeySettingsDialog(QDialog):
             QPushButton {
                 background-color: #1f6feb;
                 color: #ffffff;
-                border-radius: 4px;
-                padding: 4px 14px;
+                border: 1px solid #388bfd;
+                border-radius: 6px;
+                padding: 5px 16px;
+                font-size: 12px;
                 font-weight: bold;
             }
             QPushButton:hover {
@@ -145,15 +479,63 @@ class HotkeySettingsDialog(QDialog):
         save_btn.clicked.connect(self._save_and_apply)
         btn_box.addWidget(save_btn)
 
-        layout.addLayout(btn_box)
+        main_layout.addLayout(btn_box)
+
+    def _add_row(self, hotkey_str: str, start_recording: bool = False) -> HotkeyRowWidget:
+        row = HotkeyRowWidget(hotkey_str, on_delete=self._remove_row, parent=self.list_container)
+        self.rows.append(row)
+        # 插入到 stretch 之前
+        self.list_layout.insertWidget(len(self.rows) - 1, row)
+        row.show()
+        if start_recording:
+            row.edit.start_recording()
+        return row
+
+    def _remove_row(self, row: HotkeyRowWidget) -> None:
+        if row in self.rows:
+            self.rows.remove(row)
+            self.list_layout.removeWidget(row)
+            row.deleteLater()
+            self._flash_status("已移除快捷键")
+
+    def _quick_add_preset(self, preset_keycode: str) -> None:
+        norm = normalize_to_pynput(preset_keycode)
+        existing = [normalize_to_pynput(r.get_hotkey()) for r in self.rows if r.get_hotkey()]
+        if norm in existing:
+            self._flash_status(f"快捷键 {format_for_display(norm)} 已在列表中")
+            return
+        self._add_row(norm)
+        self._flash_status(f"已添加快捷键：{format_for_display(norm)}")
+
+    def _reset_to_default(self) -> None:
+        for r in list(self.rows):
+            self._remove_row(r)
+        self._add_row("<alt>+d")
+        self._flash_status("已重置为默认快捷键：Alt + D")
+
+    def _flash_status(self, text: str) -> None:
+        self.status_lbl.setText(f"💡 {text}")
 
     def _save_and_apply(self) -> None:
-        val = self.input_hotkey.text().strip()
-        if val:
-            self.selection_config.hotkey = val
-            if self.on_save:
-                self.on_save()
+        raw_keys = [r.get_hotkey() for r in self.rows if r.get_hotkey()]
+        valid_keys: list[str] = []
+        for k in raw_keys:
+            norm = normalize_to_pynput(k)
+            if not is_valid_pynput_hotkey(norm):
+                self._flash_status(f"❌ 快捷键 '{k}' 格式无效，请检查")
+                return
+            if norm not in valid_keys:
+                valid_keys.append(norm)
+
+        if not valid_keys:
+            self._flash_status("❌ 请至少保留一个有效快捷键")
+            return
+
+        self.selection_config.set_all_hotkeys(valid_keys)
+        if self.on_save:
+            self.on_save()
         self.accept()
+
 
 
 class PopupBubble(QWidget):

@@ -331,19 +331,69 @@ def test_hotkey_settings_dialog(qapp):
     from yanche.adapters.gui.popup import HotkeySettingsDialog
 
     saved = []
-    sel_config = SelectionConfig(hotkey="<alt>+d")
+    sel_config = SelectionConfig(hotkey="<alt>+d", extra_hotkeys=["<ctrl>+<alt>+t"])
     dialog = HotkeySettingsDialog(
         sel_config,
         on_save=lambda: saved.append(True),
     )
-    assert dialog.input_hotkey.text() == "<alt>+d"
+    assert len(dialog.rows) == 2
+    assert dialog.rows[0].get_hotkey() == "<alt>+d"
+    assert dialog.rows[1].get_hotkey() == "<ctrl>+<alt>+t"
 
-    # 修改快捷键并保存生效
-    dialog.input_hotkey.setText("<ctrl>+<alt>+x")
+    # 1. 快速添加预设 F2
+    dialog._quick_add_preset("<f2>")
+    assert len(dialog.rows) == 3
+    assert dialog.rows[2].get_hotkey() == "<f2>"
+
+    # 2. 模拟添加新行并录制/输入自定义快捷键
+    new_row = dialog._add_row("<alt>+q")
+    assert len(dialog.rows) == 4
+    assert new_row.get_hotkey() == "<alt>+q"
+
+    # 3. 模拟删除第 2 个快捷键 (Ctrl+Alt+T)
+    row_to_del = dialog.rows[1]
+    dialog._remove_row(row_to_del)
+    assert len(dialog.rows) == 3
+
+    # 4. 保存并生效
     dialog._save_and_apply()
-    assert sel_config.hotkey == "<ctrl>+<alt>+x"
+    assert sel_config.hotkey == "<alt>+d"
+    assert sel_config.extra_hotkeys == ["<f2>", "<alt>+q"]
+    assert sel_config.get_all_hotkeys() == ["<alt>+d", "<f2>", "<alt>+q"]
     assert len(saved) == 1
+
+    # 5. 恢复默认测试
+    dialog._reset_to_default()
+    assert len(dialog.rows) == 1
+    assert dialog.rows[0].get_hotkey() == "<alt>+d"
+
     dialog.close()
+
+
+def test_key_recorder_edit_and_qt_keys(qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeyEvent
+    from yanche.adapters.gui.popup import KeyRecorderEdit, qkey_to_pynput
+
+    edit = KeyRecorderEdit("<alt>+d")
+    assert edit.get_hotkey_value() == "<alt>+d"
+    assert edit.text() == "Alt + D"
+
+    # 测试 qkey_to_pynput 辅助函数
+    assert qkey_to_pynput(Qt.KeyboardModifier.AltModifier, Qt.Key.Key_D) == "<alt>+d"
+    assert qkey_to_pynput(Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier, Qt.Key.Key_T) == "<ctrl>+<alt>+t"
+    assert qkey_to_pynput(Qt.KeyboardModifier.NoModifier, Qt.Key.Key_F2) == "<f2>"
+
+    # 模拟进入录制模式并按下按键
+    edit.start_recording()
+    assert edit._is_recording is True
+
+    event = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Q, Qt.KeyboardModifier.AltModifier)
+    edit.keyPressEvent(event)
+    assert edit._is_recording is False
+    assert edit.get_hotkey_value() == "<alt>+q"
+    assert edit.text() == "Alt + Q"
+
 
 
 

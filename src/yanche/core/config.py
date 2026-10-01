@@ -40,6 +40,34 @@ class SelectionConfig(BaseModel):
     enable_mouse_side_button: bool = True  # 启用鼠标侧键 (X1/X2) 划词取词触发
     panic_hotkey: str = "<ctrl>+<alt>+<esc>"  # 紧急逃生键
 
+    def get_all_hotkeys(self) -> list[str]:
+        """获取所有已启用的快捷键列表（去重且保序）"""
+        keys: list[str] = []
+        if self.hotkey and self.hotkey.strip():
+            keys.append(self.hotkey.strip().lower())
+        for k in self.extra_hotkeys:
+            cleaned = k.strip().lower()
+            if cleaned and cleaned not in keys:
+                keys.append(cleaned)
+        return keys or ["<alt>+d"]
+
+    def set_all_hotkeys(self, hotkeys: list[str]) -> None:
+        """更新所有快捷键列表，第一个作为主快捷键，其余作为额外快捷键"""
+        cleaned = [k.strip().lower() for k in hotkeys if k and k.strip()]
+        unique: list[str] = []
+        seen = set()
+        for k in cleaned:
+            if k not in seen:
+                seen.add(k)
+                unique.append(k)
+        if unique:
+            self.hotkey = unique[0]
+            self.extra_hotkeys = unique[1:]
+        else:
+            self.hotkey = "<alt>+d"
+            self.extra_hotkeys = []
+
+
 
 class UIConfig(BaseModel):
     """悬浮窗 UI 配置"""

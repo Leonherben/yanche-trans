@@ -174,3 +174,31 @@ def test_hotkey_selection_listener_trigger(mocker):
     assert callbacks[0] == ("instant selected text", (250, 350))
 
 
+def test_hotkey_helpers_normalize_and_display():
+    from yanche.adapters.selection.hotkey_fallback import (
+        normalize_to_pynput,
+        format_for_display,
+        is_valid_pynput_hotkey,
+    )
+
+    # 1. 规范化测试
+    assert normalize_to_pynput("Alt + D") == "<alt>+d"
+    assert normalize_to_pynput("ctrl+alt+t") == "<ctrl>+<alt>+t"
+    assert normalize_to_pynput("Ctrl + Shift + F2") == "<ctrl>+<shift>+<f2>"
+    assert normalize_to_pynput("<alt>+d") == "<alt>+d"
+    assert normalize_to_pynput("F9") == "<f9>"
+
+    # 2. 展示格式化测试
+    assert format_for_display("<alt>+d") == "Alt + D"
+    assert format_for_display("<ctrl>+<alt>+t") == "Ctrl + Alt + T"
+    assert format_for_display("<ctrl>+<shift>+<f2>") == "Ctrl + Shift + F2"
+
+    # 3. 合法性校验测试
+    assert is_valid_pynput_hotkey("<alt>+d") is True
+    assert is_valid_pynput_hotkey("<ctrl>+<alt>+t") is True
+    assert is_valid_pynput_hotkey("<f2>") is True
+    assert is_valid_pynput_hotkey("invalid_combo_string") is False
+    assert is_valid_pynput_hotkey("") is False
+
+
+

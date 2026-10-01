@@ -53,3 +53,20 @@ def test_selection_config_defaults():
     assert config.selection.enable_mouse_side_button is True
     assert config.selection.auto_popup_on_selection is False
 
+
+def test_selection_config_multiple_hotkeys():
+    config = AppConfig()
+    assert config.selection.get_all_hotkeys() == ["<alt>+d"]
+
+    # 设置多个快捷键，包含重复项
+    config.selection.set_all_hotkeys(["<alt>+d", "<ctrl>+<alt>+t", "<alt>+d", "<f2>"])
+    assert config.selection.hotkey == "<alt>+d"
+    assert config.selection.extra_hotkeys == ["<ctrl>+<alt>+t", "<f2>"]
+    assert config.selection.get_all_hotkeys() == ["<alt>+d", "<ctrl>+<alt>+t", "<f2>"]
+
+    # 清空时回退为默认
+    config.selection.set_all_hotkeys([])
+    assert config.selection.hotkey == "<alt>+d"
+    assert config.selection.extra_hotkeys == []
+
+

@@ -13,6 +13,90 @@ import pyperclip
 from yanche.adapters.selection.base import BaseSelectionListener, SelectionCallback
 
 
+def normalize_to_pynput(key_str: str) -> str:
+    """将任意常见格式的快捷键字符串（如 'Alt + D', 'ctrl+alt+t', '<alt>+d', 'F2'）转为标准 pynput 格式"""
+    if not key_str:
+        return ""
+    raw = key_str.replace("+", " ").replace("-", " ")
+    parts = [p.strip() for p in raw.split() if p.strip()]
+    special_keys = {
+        "ctrl": "<ctrl>",
+        "control": "<ctrl>",
+        "alt": "<alt>",
+        "shift": "<shift>",
+        "meta": "<cmd>",
+        "super": "<cmd>",
+        "win": "<cmd>",
+        "windows": "<cmd>",
+        "cmd": "<cmd>",
+        "command": "<cmd>",
+        "space": "<space>",
+        "esc": "<esc>",
+        "escape": "<esc>",
+        "enter": "<enter>",
+        "return": "<enter>",
+        "tab": "<tab>",
+        "backspace": "<backspace>",
+    }
+    for i in range(1, 25):
+        special_keys[f"f{i}"] = f"<f{i}>"
+
+    res = []
+    for part in parts:
+        lower_p = part.lower().strip("<>")
+        if lower_p in special_keys:
+            res.append(special_keys[lower_p])
+        elif len(lower_p) == 1:
+            res.append(lower_p)
+        elif part.startswith("<") and part.endswith(">"):
+            res.append(part.lower())
+        else:
+            res.append(f"<{lower_p}>")
+    return "+".join(res)
+
+
+def format_for_display(key_str: str) -> str:
+    """将 pynput 格式（如 '<alt>+d', '<ctrl>+<alt>+t'）转为友好展示格式（如 'Alt + D', 'Ctrl + Alt + T'）"""
+    if not key_str:
+        return ""
+    norm = normalize_to_pynput(key_str)
+    parts = norm.split("+")
+    labels = {
+        "<ctrl>": "Ctrl",
+        "<alt>": "Alt",
+        "<shift>": "Shift",
+        "<cmd>": "Win/Super",
+        "<esc>": "Esc",
+        "<space>": "Space",
+        "<enter>": "Enter",
+        "<tab>": "Tab",
+        "<backspace>": "Backspace",
+    }
+    disp = []
+    for p in parts:
+        lower_p = p.lower()
+        if lower_p in labels:
+            disp.append(labels[lower_p])
+        elif lower_p.startswith("<f") and lower_p.endswith(">"):
+            disp.append(lower_p[1:-1].upper())
+        elif lower_p.startswith("<") and lower_p.endswith(">"):
+            disp.append(lower_p[1:-1].capitalize())
+        else:
+            disp.append(p.upper() if len(p) == 1 else p.capitalize())
+    return " + ".join(disp)
+
+
+def is_valid_pynput_hotkey(pynput_str: str) -> bool:
+    """校验 pynput 快捷键字符串是否能被正常解析"""
+    if not pynput_str:
+        return False
+    try:
+        keys = keyboard.HotKey.parse(pynput_str)
+        return len(keys) > 0
+    except Exception:
+        return False
+
+
 class HotkeySelectionListener(BaseSelectionListener):
     """支持多热键绑定与高灵敏选区提取的热键取词器"""
 
@@ -105,8 +189,13 @@ class HotkeySelectionListener(BaseSelectionListener):
         hotkey_map = {}
         for hk in all_keys:
             cleaned = hk.strip()
-            if cleaned:
-                hotkey_map[cleaned] = self._on_hotkey_activated
+            if not cleaned:
+                continue
+            normalized = normalize_to_pynput(cleaned)
+            if normalized and is_valid_pynput_hotkey(normalized):
+                hotkey_map[normalized] = self._on_hotkey_activated
+            else:
+                print(f"⚠️ 忽略无效快捷键配置: {hk}")
 
         if not hotkey_map:
             return
@@ -116,6 +205,7 @@ class HotkeySelectionListener(BaseSelectionListener):
             self._hotkey_listener.start()
         except Exception as e:
             print(f"⚠️ 全局快捷键监听注册失败 ({hotkey_map.keys()}): {e}")
+
 
     def stop(self) -> None:
         self._is_running = False
