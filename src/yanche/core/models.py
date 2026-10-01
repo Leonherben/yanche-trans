@@ -4,6 +4,7 @@
 """
 
 from __future__ import annotations
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -18,8 +19,14 @@ class TranslationRequest:
     context: Optional[str] = None
 
     def clean_text(self) -> str:
-        """清洗文本：合并多余空行与换行符，便于句意翻译"""
-        lines = [line.strip() for line in self.text.splitlines() if line.strip()]
+        """清洗文本：合并多余空行与换行符，便于句意翻译；自动修复 PDF 跨行英文断词与连字符"""
+        if not self.text:
+            return ""
+        # 统一跨平台换行符
+        text = self.text.replace("\r\n", "\n").replace("\r", "\n")
+        # 1. 修复学术论文 PDF 双栏排版跨行连字符截断 (如 convo-\n lutional -> convolutional)
+        text = re.sub(r'([a-zA-Z]+)-\s*\n\s*([a-zA-Z]+)', r'\1\2', text)
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
         return " ".join(lines)
 
 

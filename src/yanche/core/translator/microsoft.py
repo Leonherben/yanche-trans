@@ -44,12 +44,23 @@ _LANG_MAP: Dict[str, str] = {
 class _BingSession:
     """必应翻译免 Key 网页会话凭证"""
 
-    def __init__(self, ig: str, iid: str, key: str, token: str, expires_at: float) -> None:
+    def __init__(
+        self,
+        ig: str,
+        iid: str,
+        key: str,
+        token: str,
+        expires_at: float,
+        base_host: str = "cn.bing.com",
+        cookies: Optional[Dict[str, str]] = None,
+    ) -> None:
         self.ig = ig
         self.iid = iid
         self.key = key
         self.token = token
         self.expires_at = expires_at
+        self.base_host = base_host
+        self.cookies = cookies or {}
 
     def is_valid(self) -> bool:
         return time.time() < self.expires_at
@@ -89,8 +100,8 @@ class MicrosoftTranslator(BaseTranslator):
                 return self._session
 
             candidate_urls = [
-                "https://www.bing.com/translator",
                 "https://cn.bing.com/translator",
+                "https://www.bing.com/translator",
             ]
             client = create_safe_http_client(self.config.timeout_seconds, follow_redirects=True)
             try:
@@ -114,7 +125,15 @@ class MicrosoftTranslator(BaseTranslator):
 
                             # 会话通常有效期 1 小时，提前 5 分钟过期
                             expires_at = time.time() + max(300, (interval_ms / 1000) - 300)
-                            self._session = _BingSession(ig, iid, key, token, expires_at)
+
+                            base_host = "cn.bing.com"
+                            if hasattr(resp, "url") and getattr(resp.url, "host", None):
+                                base_host = str(resp.url.host)
+                            cookies = dict(resp.cookies) if hasattr(resp, "cookies") else {}
+
+                            self._session = _BingSession(
+                                ig, iid, key, token, expires_at, base_host=base_host, cookies=cookies
+                            )
                             return self._session
                     except Exception as e:
                         last_err = e
@@ -129,11 +148,20 @@ class MicrosoftTranslator(BaseTranslator):
         mapped_src = self._map_lang(src_lang, is_source=True)
         mapped_tgt = self._map_lang(tgt_lang, is_source=False)
 
-        client = create_safe_http_client(self.config.timeout_seconds, follow_redirects=True)
+        client = create_safe_http_client(self.config.timeout_seconds, follow_redirects=False)
         try:
             for attempt in range(2):
                 session = self._get_bing_session(force_refresh=(attempt > 0))
-                url = f"https://www.bing.com/ttranslatev3?isVertical=1&&IG={session.ig}&IID={session.iid}"
+
+                # 优先使用获取到会话的实际域名，并提供双镜像容灾
+                candidate_hosts = [session.base_host, "cn.bing.com", "www.bing.com"]
+                seen_hosts = set()
+                endpoints = []
+                for host in candidate_hosts:
+                    if host and host not in seen_hosts:
+                        seen_hosts.add(host)
+                        endpoints.append(f"https://{host}/ttranslatev3")
+
                 data = {
                     "fromLang": mapped_src,
                     "text": clean_text,
@@ -141,27 +169,59 @@ class MicrosoftTranslator(BaseTranslator):
                     "token": session.token,
                     "key": session.key,
                 }
-                resp = client.post(url, headers=self._headers, data=data)
-                if resp.status_code != 200:
-                    if attempt == 0:
+
+                for endpoint in endpoints:
+                    url = f"{endpoint}?isVertical=1&&IG={session.ig}&IID={session.iid}"
+                    try:
+                        resp = client.post(
+                            url,
+                            headers=self._headers,
+                            data=data,
+                            cookies=session.cookies,
+                            follow_redirects=False,
+                        )
+
+                        # 如果服务端返回 301/302 重定向，手动重定向 POST，避免 HTTP 规范将 POST 降级为无 Body 的 GET
+                        if resp.status_code in (301, 302, 303, 307, 308):
+                            loc = resp.headers.get("location")
+                            if loc:
+                                if not loc.startswith("http"):
+                                    loc = f"https://{session.base_host}{loc}" if loc.startswith("/") else f"https://{session.base_host}/{loc}"
+                                resp = client.post(
+                                    loc,
+                                    headers=self._headers,
+                                    data=data,
+                                    cookies=session.cookies,
+                                    follow_redirects=False,
+                                )
+
+                        if resp.status_code != 200:
+                            continue
+
+                        raw_text = resp.text.strip()
+                        if not raw_text:
+                            # 响应体为空，说明该端点丢弃了请求体或遇到校验阻断，尝试下一个备用端点
+                            continue
+
+                        try:
+                            res_json = resp.json()
+                        except Exception:
+                            # 响应不是标准 JSON 格式，尝试下一个备用端点
+                            continue
+
+                        # 检查是否由于 token 过期返回了 205
+                        if isinstance(res_json, dict) and res_json.get("statusCode") == 205:
+                            break  # 跳出当前端点循环，外层 attempt 循环将强制刷新凭证
+
+                        if isinstance(res_json, list) and len(res_json) > 0:
+                            translations = res_json[0].get("translations", [])
+                            if translations and "text" in translations[0]:
+                                return translations[0]["text"]
+
+                    except Exception:
                         continue
-                    resp.raise_for_status()
 
-                res_json = resp.json()
-                # 检查是否由于 token 过期返回了 205
-                if isinstance(res_json, dict) and res_json.get("statusCode") == 205:
-                    if attempt == 0:
-                        continue
-                    raise ValueError("必应翻译凭证已失效 (Status 205)")
-
-                if isinstance(res_json, list) and len(res_json) > 0:
-                    translations = res_json[0].get("translations", [])
-                    if translations and "text" in translations[0]:
-                        return translations[0]["text"]
-
-                raise ValueError(f"必应返回了非预期结构: {res_json}")
-
-            raise ValueError("必应翻译重试后仍未获取到有效译文")
+            raise ValueError("必应翻译重试后仍未获取到有效译文（可能受到临时限流或网络阻断）")
         finally:
             client.close()
 

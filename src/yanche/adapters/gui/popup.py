@@ -1062,18 +1062,48 @@ class PopupBubble(QWidget):
             return f"{words} 词 · {chars} 字符"
         return f"{chars} 字符"
 
+    def _safe_copy_to_clipboard(self, text: str) -> None:
+        if not text:
+            return
+        # 1. 优先使用 Qt 原生系统剪贴板通道（对 Wayland / X11 / Windows 提供最佳系统原生兼容）
+        try:
+            from PySide6.QtGui import QGuiApplication, QClipboard
+            cb = QGuiApplication.clipboard()
+            if cb:
+                cb.setText(text, QClipboard.Mode.Clipboard)
+                cb.setText(text, QClipboard.Mode.Selection)
+        except Exception:
+            pass
+
+        # 2. 同时使用 pyperclip 兜底写入剪贴板
+        try:
+            pyperclip.copy(text)
+        except Exception:
+            pass
+
     def _copy_original(self) -> None:
         text = self.original_edit.toPlainText().strip() or self._last_requested_text or (
             self._current_result.original_text if self._current_result else ""
         )
         if text:
-            pyperclip.copy(text)
+            self._safe_copy_to_clipboard(text)
             self._flash_status("已复制原文")
 
     def _copy_result(self) -> None:
-        if self._current_result and self._current_result.is_success():
-            pyperclip.copy(self._current_result.translated_text)
-            self._flash_status("已复制译文")
+        text = ""
+        if self._current_result and self._current_result.translated_text:
+            text = self._current_result.translated_text
+        if not text:
+            raw = self.text_browser.toPlainText().strip()
+            if raw and raw != "正在翻译...":
+                text = raw
+
+        if text:
+            self._safe_copy_to_clipboard(text)
+            if text.startswith("[Error]"):
+                self._flash_status("已复制错误提示")
+            else:
+                self._flash_status("已复制译文")
 
     def _on_original_text_changed(self) -> None:
         """用户在输入框手动修改或粘贴文本时的响应"""

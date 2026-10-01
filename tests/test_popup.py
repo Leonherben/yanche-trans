@@ -222,6 +222,18 @@ def test_popup_copy_buttons_and_meta(qapp):
     popup._copy_result()
     assert pyperclip.paste() == "人工智能"
 
+    # 测试出现错误提示时，复制按钮依然能正常复制错误文本以便用户排查反馈
+    err_result = TranslationResult(
+        original_text="Test Error",
+        translated_text="[Error] 微软翻译错误: 动态会话失败",
+        source_lang="en",
+        target_lang="zh-CN",
+        provider="microsoft",
+    )
+    popup.display_result(err_result)
+    popup._copy_result()
+    assert pyperclip.paste() == "[Error] 微软翻译错误: 动态会话失败"
+
     popup.close()
 
 
