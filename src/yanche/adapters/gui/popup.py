@@ -32,10 +32,20 @@ class PopupBubble(QWidget):
     dismiss_signal = Signal(int, int)
     closed = Signal()
 
-    def __init__(self, config: UIConfig, on_retranslate: Optional[Callable[[str], None]] = None) -> None:
+    def __init__(
+        self,
+        config: UIConfig,
+        on_retranslate: Optional[Callable[[str], None]] = None,
+        on_switch_provider: Optional[Callable[[str, str], None]] = None,
+        available_providers: Optional[list[str]] = None,
+    ) -> None:
         super().__init__()
         self.config = config
         self.on_retranslate = on_retranslate
+        self.on_switch_provider = on_switch_provider
+        self.available_providers = available_providers or ["deepseek", "openai", "zhipu", "custom"]
+        self._current_provider = "deepseek"
+        self._last_requested_text = ""
         self._is_pinned = False
         self._current_result: Optional[TranslationResult] = None
 
@@ -77,13 +87,32 @@ class PopupBubble(QWidget):
         container_layout.setContentsMargins(12, 10, 12, 10)
         container_layout.setSpacing(6)
 
-        # 1. 顶栏：Provider 标签 + 耗时 + 钉住 + 关闭
+        # 1. 顶栏：Provider 切换按钮 + 耗时 + 钉住 + 关闭
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(0, 0, 0, 0)
 
-        self.provider_label = QLabel("言澈翻译", self)
-        self.provider_label.setStyleSheet("color: #79c0ff; font-weight: bold; font-size: 11px;")
-        top_bar.addWidget(self.provider_label)
+        self.provider_btn = QPushButton("言澈翻译 ▾", self)
+        self.provider_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.provider_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.provider_btn.setToolTip("点击切换翻译引擎")
+        self.provider_btn.setStyleSheet("""
+            QPushButton {
+                color: #79c0ff;
+                font-weight: bold;
+                font-size: 11px;
+                background-color: rgba(56, 139, 253, 0.15);
+                border: 1px solid rgba(56, 139, 253, 0.35);
+                border-radius: 4px;
+                padding: 1px 6px;
+            }
+            QPushButton:hover {
+                background-color: rgba(56, 139, 253, 0.35);
+                border-color: #58a6ff;
+            }
+        """)
+        self.provider_btn.clicked.connect(self._show_provider_menu)
+        self.provider_label = self.provider_btn  # 保持属性兼容
+        top_bar.addWidget(self.provider_btn)
 
         self.latency_label = QLabel("", self)
         self.latency_label.setStyleSheet("color: #8b949e; font-size: 10px;")
@@ -199,9 +228,50 @@ class PopupBubble(QWidget):
         if not self.underMouse():
             self.hide()
 
+    def _show_provider_menu(self) -> None:
+        """点击浮窗左上角小图标，弹出可供选择的翻译引擎菜单"""
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #161b22;
+                color: #e6edf3;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                padding: 4px;
+                font-size: 12px;
+            }
+            QMenu::item {
+                padding: 4px 16px 4px 10px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #1f6feb;
+                color: #ffffff;
+            }
+        """)
+
+        curr = self._current_provider
+        for p in self.available_providers:
+            mark = "✔ " if p == curr else "   "
+            act = menu.addAction(f"{mark}{p}")
+            act.triggered.connect(lambda checked, name=p: self._handle_provider_switch(name))
+
+        # 在按钮正下方弹出
+        pos = self.provider_btn.mapToGlobal(QPoint(0, self.provider_btn.height() + 2))
+        menu.exec(pos)
+
+    def _handle_provider_switch(self, provider_name: str) -> None:
+        self._current_provider = provider_name
+        self.provider_btn.setText(f"🤖 {provider_name} ▾")
+        if self.on_switch_provider:
+            # 传给控制器切换并立即重新翻译当前显示的原文！
+            text_to_translate = self._last_requested_text or (self._current_result.original_text if self._current_result else "")
+            self.on_switch_provider(provider_name, text_to_translate)
+
     def display_loading(self, text: str, cursor_x: int, cursor_y: int) -> None:
         """显示加载状态并定位在鼠标光标周围"""
-        self.provider_label.setText("言澈翻译 ⏳")
+        self._last_requested_text = text
+        self.provider_btn.setText(f"⏳ {self._current_provider} ▾")
         self.latency_label.setText("正在翻译中...")
         display_preview = text if len(text) <= 60 else text[:57] + "..."
         self.original_label.setText(display_preview)
@@ -212,11 +282,12 @@ class PopupBubble(QWidget):
     def display_result(self, result: TranslationResult) -> None:
         """展示完成的翻译结果"""
         self._current_result = result
+        self._current_provider = result.provider
         if result.from_cache:
-            self.provider_label.setText(f"⚡ {result.provider}")
+            self.provider_btn.setText(f"⚡ {result.provider} ▾")
             self.latency_label.setText("本地秒开缓存")
         else:
-            self.provider_label.setText(f"🤖 {result.provider}")
+            self.provider_btn.setText(f"🤖 {result.provider} ▾")
             self.latency_label.setText(f"{result.latency_ms}ms")
 
         # 截断或完整展示原文

@@ -6,7 +6,7 @@
 from __future__ import annotations
 from typing import Callable, Optional
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 from yanche.core.config import AppConfig
 
@@ -34,8 +34,17 @@ class 言澈翻译Tray(QSystemTrayIcon):
         self.on_quit = on_quit
 
         self._listener_enabled = True
+        self.provider_actions: dict[str, QAction] = {}
+        self.lang_actions: dict[str, QAction] = {}
         self.setToolTip("言澈翻译 划词翻译 (正在监听)")
         self._build_menu()
+        self.activated.connect(self._on_tray_activated)
+
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        """支持鼠标左键单击、双击或右键均能立即在光标位置弹出托盘菜单"""
+        menu = self.contextMenu()
+        if menu:
+            menu.popup(QCursor.pos())
 
     def _create_vector_icon(self) -> QIcon:
         """程序化绘制优雅的暗青色托盘图标，避免对外部 PNG 文件的依赖"""
@@ -73,6 +82,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
         provider_menu = menu.addMenu("🌐 翻译引擎 (Provider)")
         provider_group = QActionGroup(provider_menu)
         provider_group.setExclusive(True)
+        self.provider_actions.clear()
         for name in self.config.providers.keys():
             act = QAction(name, provider_menu, checkable=True)
             if name == self.config.default_provider:
@@ -80,11 +90,13 @@ class 言澈翻译Tray(QSystemTrayIcon):
             act.triggered.connect(lambda checked, p=name: self._handle_provider_changed(p))
             provider_group.addAction(act)
             provider_menu.addAction(act)
+            self.provider_actions[name] = act
 
         # 3. 目标语言选择
         lang_menu = menu.addMenu("🗣 目标语言")
         lang_group = QActionGroup(lang_menu)
         lang_group.setExclusive(True)
+        self.lang_actions.clear()
         langs = [("简体中文", "zh-CN"), ("English", "en"), ("日本語", "ja"), ("한국어", "ko")]
         for title, code in langs:
             act = QAction(title, lang_menu, checkable=True)
@@ -93,6 +105,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
             act.triggered.connect(lambda checked, c=code: self._handle_lang_changed(c))
             lang_group.addAction(act)
             lang_menu.addAction(act)
+            self.lang_actions[code] = act
 
         menu.addSeparator()
 
@@ -130,14 +143,22 @@ class 言澈翻译Tray(QSystemTrayIcon):
     def _handle_provider_changed(self, provider_name: str) -> None:
         self.config.default_provider = provider_name
         self.config.save()
-        self._build_menu()
+        for name, act in self.provider_actions.items():
+            act.setChecked(name == provider_name)
         if self.on_provider_change:
             self.on_provider_change(provider_name)
+        self.showMessage("言澈翻译", f"已切换翻译引擎为: {provider_name}", QSystemTrayIcon.MessageIcon.Information, 1500)
+
+    def update_active_provider(self, provider_name: str) -> None:
+        """从外部（如浮窗）同步选中的引擎状态"""
+        for name, act in self.provider_actions.items():
+            act.setChecked(name == provider_name)
 
     def _handle_lang_changed(self, lang_code: str) -> None:
         self.config.default_target_lang = lang_code
         self.config.save()
-        self._build_menu()
+        for code, act in self.lang_actions.items():
+            act.setChecked(code == lang_code)
         if self.on_target_lang_change:
             self.on_target_lang_change(lang_code)
 

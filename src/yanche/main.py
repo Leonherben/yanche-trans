@@ -52,7 +52,11 @@ class 言澈翻译App(QObject):
         self.translator = create_translator(self.active_provider_cfg)
 
         # 悬浮窗与托盘
-        self.popup = PopupBubble(self.config.ui)
+        self.popup = PopupBubble(
+            config=self.config.ui,
+            on_switch_provider=self.switch_provider_and_retranslate,
+            available_providers=list(self.config.providers.keys()),
+        )
         self.popup.closed.connect(self._on_popup_closed)
         self.tray = 言澈翻译Tray(
             config=self.config,
@@ -173,6 +177,15 @@ class 言澈翻译App(QObject):
         self.config.save()
         self.active_provider_cfg = self.config.get_active_provider()
         self.translator = create_translator(self.active_provider_cfg)
+        self.tray.update_active_provider(provider_name)
+
+    def switch_provider_and_retranslate(self, provider_name: str, text: str) -> None:
+        """从浮窗直接切换模型并就地重新翻译"""
+        self.set_provider(provider_name)
+        if text:
+            # 立即在当前浮窗位置展示 loading 并异步请求新结果
+            self.popup.display_loading(text, self.popup.x(), self.popup.y())
+            threading.Thread(target=self._async_translate_pipeline, args=(text,), daemon=True).start()
 
     def set_target_lang(self, lang_code: str) -> None:
         self.config.default_target_lang = lang_code

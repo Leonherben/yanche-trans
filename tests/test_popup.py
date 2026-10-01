@@ -40,11 +40,37 @@ def test_popup_display_success_markdown(qapp):
     )
     popup.display_result(result)
     assert popup.isVisible()
-    assert popup.provider_label.text() == "🤖 deepseek"
+    assert "deepseek" in popup.provider_label.text()
     assert "120" in popup.latency_label.text()
     assert popup.original_label.text() == "test text"
     rendered_html = popup.text_browser.toHtml()
     assert "<b>" in rendered_html or "font-weight" in rendered_html or "strong" in rendered_html
+    popup.close()
+
+
+def test_popup_switch_provider(qapp):
+    switched = []
+    config = UIConfig()
+    popup = PopupBubble(
+        config,
+        on_switch_provider=lambda p, txt: switched.append((p, txt)),
+        available_providers=["deepseek", "openai"],
+    )
+    # 模拟先展示结果
+    result = TranslationResult(
+        original_text="sample",
+        translated_text="示例",
+        source_lang="en",
+        target_lang="zh-CN",
+        provider="deepseek",
+    )
+    popup.display_result(result)
+
+    # 模拟用户在菜单中切换为 openai
+    popup._handle_provider_switch("openai")
+    assert len(switched) == 1
+    assert switched[0] == ("openai", "sample")
+    assert "openai" in popup.provider_btn.text()
     popup.close()
 
 
