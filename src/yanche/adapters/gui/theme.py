@@ -231,6 +231,10 @@ _DARK_STYLESHEET = """
     QPushButton#subtle_btn:hover {
         color: #58a6ff;
     }
+    QLabel#meta_label {
+        color: #8b949e;
+        font-size: 11px;
+    }
     QTextBrowser#trans_browser {
         background: transparent;
         border: none;
@@ -367,6 +371,10 @@ _LIGHT_STYLESHEET = """
     QPushButton#subtle_btn:hover {
         color: #0969da;
     }
+    QLabel#meta_label {
+        color: #57606a;
+        font-size: 11px;
+    }
     QTextBrowser#trans_browser {
         background: transparent;
         border: none;
@@ -502,6 +510,10 @@ _GLASS_STYLESHEET = """
     }
     QPushButton#subtle_btn:hover {
         color: #58a6ff;
+    }
+    QLabel#meta_label {
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 11px;
     }
     QTextBrowser#trans_browser {
         background: transparent;

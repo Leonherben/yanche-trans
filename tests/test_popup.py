@@ -42,6 +42,9 @@ def test_popup_display_success_markdown(qapp):
     assert popup.isVisible()
     assert "deepseek" in popup.provider_label.text()
     assert "120" in popup.latency_label.text()
+    assert popup.latency_label.isVisible()
+    assert popup.orig_meta_label.isVisible()
+    assert "9 字符" in popup.orig_meta_label.text()
     assert popup.original_label.text() == "test text"
     rendered_html = popup.text_browser.toHtml()
     assert "<b>" in rendered_html or "font-weight" in rendered_html or "strong" in rendered_html

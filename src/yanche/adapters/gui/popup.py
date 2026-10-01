@@ -760,8 +760,8 @@ class PopupBubble(QWidget):
         orig_bottom = QHBoxLayout()
         orig_bottom.setContentsMargins(0, 0, 0, 0)
         orig_bottom.setSpacing(6)
-        self.orig_meta_label = QLabel("", self)
-        self.orig_meta_label.hide()
+        self.orig_meta_label = QLabel("0 字符", self)
+        self.orig_meta_label.setObjectName("meta_label")
         orig_bottom.addWidget(self.orig_meta_label)
 
         orig_bottom.addStretch()
@@ -811,9 +811,10 @@ class PopupBubble(QWidget):
         # 译文卡片底栏：状态提示 + 复制译文按钮
         trans_bottom = QHBoxLayout()
         trans_bottom.setContentsMargins(0, 0, 0, 0)
+        trans_bottom.setSpacing(8)
 
         self.latency_label = QLabel("", self)
-        self.latency_label.hide()
+        self.latency_label.setObjectName("meta_label")
         trans_bottom.addWidget(self.latency_label)
 
         self.status_msg = QLabel("", self)
@@ -1077,6 +1078,7 @@ class PopupBubble(QWidget):
         has_text = bool(text)
         self.clear_orig_btn.setVisible(has_text)
         self.translate_btn.setVisible(has_text)
+        self.orig_meta_label.setText(self._format_meta(text))
 
         if text:
             if text != self._last_requested_text:
@@ -1106,6 +1108,7 @@ class PopupBubble(QWidget):
         self.text_browser.clear()
         self.status_msg.setText("")
         self.latency_label.setText("")
+        self.orig_meta_label.setText("0 字符")
         self._last_requested_text = ""
         self._current_result = None
         self.clear_orig_btn.hide()
@@ -1119,6 +1122,7 @@ class PopupBubble(QWidget):
         self.text_browser.clear()
         self.status_msg.setText("")
         self.latency_label.setText("")
+        self.orig_meta_label.setText("0 字符")
         self._last_requested_text = ""
         self._current_result = None
         self.clear_orig_btn.hide()
