@@ -4,10 +4,10 @@
 """
 
 from __future__ import annotations
-from yanche.core.config import ProviderConfig
-from yanche.core.translator.base import BaseTranslator
-from yanche.core.translator.openai_compatible import OpenAICompatibleTranslator
-from yanche.core.translator.microsoft import MicrosoftTranslator
+from yanxi.core.config import ProviderConfig
+from yanxi.core.translator.base import BaseTranslator
+from yanxi.core.translator.openai_compatible import OpenAICompatibleTranslator
+from yanxi.core.translator.microsoft import MicrosoftTranslator
 
 
 def create_translator(config: ProviderConfig) -> BaseTranslator:

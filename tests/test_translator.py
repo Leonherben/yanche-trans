@@ -3,9 +3,9 @@
 from unittest.mock import MagicMock, patch
 import pytest
 import httpx
-from yanche.core.config import ProviderConfig
-from yanche.core.models import TranslationRequest
-from yanche.core.translator.openai_compatible import OpenAICompatibleTranslator
+from yanxi.core.config import ProviderConfig
+from yanxi.core.models import TranslationRequest
+from yanxi.core.translator.openai_compatible import OpenAICompatibleTranslator
 
 
 @pytest.fixture
@@ -88,7 +88,7 @@ def test_timeout_handling(mock_post, mock_provider_config):
 
 
 def test_socks_proxy_scheme_healing(monkeypatch):
-    from yanche.core.translator.openai_compatible import create_safe_http_client
+    from yanxi.core.translator.openai_compatible import create_safe_http_client
 
     # 模拟 Linux Mint/GNOME 桌面环境设置的 socks:// 协议头
     monkeypatch.setenv("ALL_PROXY", "socks://127.0.0.1:7890/")
@@ -101,8 +101,8 @@ def test_socks_proxy_scheme_healing(monkeypatch):
 
 
 def test_factory_creates_microsoft_translator():
-    from yanche.core.translator.factory import create_translator
-    from yanche.core.translator.microsoft import MicrosoftTranslator
+    from yanxi.core.translator.factory import create_translator
+    from yanxi.core.translator.microsoft import MicrosoftTranslator
 
     cfg = ProviderConfig(name="microsoft", provider_type="microsoft")
     tr = create_translator(cfg)
@@ -114,7 +114,7 @@ def test_factory_creates_microsoft_translator():
 
 
 def test_microsoft_translator_free_channel(mocker):
-    from yanche.core.translator.microsoft import MicrosoftTranslator
+    from yanxi.core.translator.microsoft import MicrosoftTranslator
 
     cfg = ProviderConfig(name="microsoft", provider_type="microsoft", api_key="")
     translator = MicrosoftTranslator(cfg)
@@ -141,7 +141,7 @@ def test_microsoft_translator_free_channel(mocker):
     mock_client.get.return_value = mock_get_resp
     mock_client.post.return_value = mock_post_resp
 
-    mocker.patch("yanche.core.translator.microsoft.create_safe_http_client", return_value=mock_client)
+    mocker.patch("yanxi.core.translator.microsoft.create_safe_http_client", return_value=mock_client)
 
     req = TranslationRequest(text="Hello world", source_lang="en", target_lang="zh-CN")
     res = translator.translate(req)
@@ -153,7 +153,7 @@ def test_microsoft_translator_free_channel(mocker):
 
 
 def test_microsoft_translator_azure_channel(mocker):
-    from yanche.core.translator.microsoft import MicrosoftTranslator
+    from yanxi.core.translator.microsoft import MicrosoftTranslator
 
     cfg = ProviderConfig(name="microsoft", provider_type="microsoft", api_key="test-azure-secret-key")
     translator = MicrosoftTranslator(cfg)
@@ -167,7 +167,7 @@ def test_microsoft_translator_azure_channel(mocker):
     mock_client = mocker.MagicMock()
     mock_client.post.return_value = mock_post_resp
 
-    mocker.patch("yanche.core.translator.microsoft.create_safe_http_client", return_value=mock_client)
+    mocker.patch("yanxi.core.translator.microsoft.create_safe_http_client", return_value=mock_client)
 
     req = TranslationRequest(text="Hello official", source_lang="en", target_lang="zh-CN")
     res = translator.translate(req)

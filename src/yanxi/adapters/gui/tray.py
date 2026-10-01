@@ -8,8 +8,8 @@ from typing import Callable, Optional
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
-from yanche.core.config import AppConfig
-from yanche.adapters.gui.theme import AVAILABLE_THEMES, AVAILABLE_OPACITIES
+from yanxi.core.config import AppConfig
+from yanxi.adapters.gui.theme import AVAILABLE_THEMES, AVAILABLE_OPACITIES
 
 
 class 言蹊翻译Tray(QSystemTrayIcon):
@@ -254,5 +254,3 @@ class 言蹊翻译Tray(QSystemTrayIcon):
             self.on_quit()
 
 
-# 兼容历史别名
-言澈翻译Tray = 言蹊翻译Tray

@@ -10,7 +10,7 @@ import time
 from typing import Optional, Tuple, Callable, List
 from pynput import keyboard, mouse
 import pyperclip
-from yanche.adapters.selection.base import BaseSelectionListener, SelectionCallback
+from yanxi.adapters.selection.base import BaseSelectionListener, SelectionCallback
 
 
 def normalize_to_pynput(key_str: str) -> str:
@@ -148,6 +148,89 @@ class HotkeySelectionListener(BaseSelectionListener):
         except Exception:
             pass
 
+        # 核心优化：在 Windows 和 Linux 下，用户按快捷键（如 Alt+D）时手指往往仍在按住 Alt 键。
+        # 若不先释放 Alt 键，不仅组合键会变成 Alt+Ctrl+C，而且 Windows 会激活窗口菜单栏导致失焦并取消选中文本！
+        self._release_modifier_keys()
+        time.sleep(0.02)
+
+        # 发送 Ctrl+C 复制
+        self._send_ctrl_c()
+
+        # 动态微轮询检测剪贴板变更（最长等待 240ms，每 30ms 探测一次）
+        new_text = ""
+        for _ in range(8):
+            time.sleep(0.03)
+            try:
+                curr = pyperclip.paste()
+                if curr and curr != old_text:
+                    new_text = curr
+                    break
+            except Exception:
+                pass
+        else:
+            # 若轮询超时未见变更，则使用最后一次读取的内容（可能用户重复划选相同内容）
+            try:
+                new_text = pyperclip.paste()
+            except Exception:
+                new_text = ""
+
+        # 恢复剪贴板原文本，避免污染用户私密剪贴历史
+        def _restore_clipboard():
+            time.sleep(0.6)
+            try:
+                if old_text and old_text != new_text:
+                    pyperclip.copy(old_text)
+            except Exception:
+                pass
+
+        if old_text and old_text != new_text:
+            threading.Thread(target=_restore_clipboard, daemon=True).start()
+
+        sanitized = self.sanitize_text(new_text)
+        if sanitized:
+            self.callback(sanitized, (int(mx), int(my)))
+        elif self.on_no_selection:
+            self.on_no_selection()
+
+    def _release_modifier_keys(self) -> None:
+        """显式释放系统修饰键，避免快捷键粘滞与菜单栏失焦"""
+        import sys
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                # VK_MENU (Alt) = 0x12, VK_CONTROL = 0x11, VK_SHIFT = 0x10, KEYEVENTF_KEYUP = 0x0002
+                user32.keybd_event(0x12, 0, 0x0002, 0)
+                user32.keybd_event(0x11, 0, 0x0002, 0)
+                user32.keybd_event(0x10, 0, 0x0002, 0)
+            except Exception:
+                pass
+        try:
+            self._keyboard_controller.release(keyboard.Key.alt)
+            self._keyboard_controller.release(keyboard.Key.alt_l)
+            self._keyboard_controller.release(keyboard.Key.alt_r)
+            self._keyboard_controller.release(keyboard.Key.ctrl)
+            self._keyboard_controller.release(keyboard.Key.shift)
+        except Exception:
+            pass
+
+    def _send_ctrl_c(self) -> None:
+        """跨平台高保真发送 Ctrl+C 复制指令"""
+        import sys
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                # VK_CONTROL = 0x11, 'C' = 0x43
+                user32.keybd_event(0x11, 0, 0, 0)         # Ctrl down
+                user32.keybd_event(0x43, 0, 0, 0)         # C down
+                time.sleep(0.01)
+                user32.keybd_event(0x43, 0, 0x0002, 0)    # C up
+                user32.keybd_event(0x11, 0, 0x0002, 0)    # Ctrl up
+                return
+            except Exception:
+                pass
+
         try:
             self._keyboard_controller.press(keyboard.Key.ctrl)
             self._keyboard_controller.press("c")
@@ -155,31 +238,6 @@ class HotkeySelectionListener(BaseSelectionListener):
             self._keyboard_controller.release(keyboard.Key.ctrl)
         except Exception:
             pass
-
-        time.sleep(0.12)
-
-        new_text = ""
-        try:
-            new_text = pyperclip.paste()
-        except Exception:
-            pass
-
-        # 恢复剪贴板原文本，避免污染用户私密剪贴历史
-        def _restore_clipboard():
-            time.sleep(0.5)
-            try:
-                if old_text and old_text != new_text:
-                    pyperclip.copy(old_text)
-            except Exception:
-                pass
-
-        threading.Thread(target=_restore_clipboard, daemon=True).start()
-
-        sanitized = self.sanitize_text(new_text)
-        if sanitized:
-            self.callback(sanitized, (int(mx), int(my)))
-        elif self.on_no_selection:
-            self.on_no_selection()
 
     def _on_hotkey_activated(self) -> None:
         threading.Thread(target=self._trigger_capture, daemon=True).start()

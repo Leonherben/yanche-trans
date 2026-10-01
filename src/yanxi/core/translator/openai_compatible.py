@@ -8,9 +8,9 @@ import os
 import time
 from typing import Tuple
 import httpx
-from yanche.core.config import ProviderConfig
-from yanche.core.models import TranslationRequest, TranslationResult
-from yanche.core.translator.base import BaseTranslator
+from yanxi.core.config import ProviderConfig
+from yanxi.core.models import TranslationRequest, TranslationResult
+from yanxi.core.translator.base import BaseTranslator
 
 
 def normalize_proxy_env() -> None:

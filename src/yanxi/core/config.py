@@ -139,12 +139,20 @@ class AppConfig(BaseModel):
 
     @classmethod
     def get_default_config_path(cls) -> Path:
-        """获取遵循平台规范的配置文件路径"""
+        """获取遵循平台规范的配置文件路径，若存在旧版 yanche 目录则自动平滑迁移"""
         if sys.platform == "win32":
             base_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
         else:
             base_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-        return base_dir / "yanche" / "config.json"
+        target_dir = base_dir / "yanxi"
+        old_dir = base_dir / "yanche"
+        if not target_dir.exists() and old_dir.exists():
+            try:
+                import shutil
+                shutil.copytree(old_dir, target_dir)
+            except Exception:
+                pass
+        return target_dir / "config.json"
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> AppConfig:

@@ -17,8 +17,8 @@ def ensure_xcb_cursor_loaded() -> None:
             _ld = os.environ.get("LD_LIBRARY_PATH", "")
             if _user_lib not in _ld.split(":"):
                 os.environ["LD_LIBRARY_PATH"] = f"{_user_lib}:{_ld}" if _ld else _user_lib
-                if not os.environ.get("_YANCHE_RESTARTED"):
-                    os.environ["_YANCHE_RESTARTED"] = "1"
+                if not os.environ.get("_YANXI_RESTARTED"):
+                    os.environ["_YANXI_RESTARTED"] = "1"
                     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 import atexit
@@ -26,19 +26,21 @@ import signal
 import threading
 from typing import Optional, Tuple
 from PySide6.QtCore import QObject, QTimer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from pynput import keyboard
 
-from yanche.core.config import AppConfig
-from yanche.core.models import TranslationRequest, TranslationResult
-from yanche.core.translator.factory import create_translator
-from yanche.core.cache.sqlite_cache import SQLiteCache
-from yanche.adapters.gui.popup import PopupBubble
-from yanche.adapters.gui.tray import 言蹊翻译Tray, 言澈翻译Tray
-from yanche.adapters.gui.settings_dialog import SettingsDialog
-from yanche.adapters.selection.base import BaseSelectionListener
-from yanche.adapters.selection.linux_x11 import LinuxX11SelectionListener
-from yanche.adapters.selection.hotkey_fallback import HotkeySelectionListener
+from yanxi.core.config import AppConfig
+from yanxi.core.models import TranslationRequest, TranslationResult
+from yanxi.core.translator.factory import create_translator
+from yanxi.core.cache.sqlite_cache import SQLiteCache
+from yanxi.core.single_instance import SingleInstance
+from yanxi.adapters.gui.popup import PopupBubble
+from yanxi.adapters.gui.tray import 言蹊翻译Tray
+from yanxi.adapters.gui.settings_dialog import SettingsDialog
+from yanxi.adapters.selection.base import BaseSelectionListener
+from yanxi.adapters.selection.linux_x11 import LinuxX11SelectionListener
+from yanxi.adapters.selection.hotkey_fallback import HotkeySelectionListener
 
 
 class 言蹊翻译App(QObject):
@@ -268,6 +270,21 @@ class 言蹊翻译App(QObject):
         # 重新加载热键与选词监听器
         self._reload_listeners()
 
+    def on_external_wakeup(self) -> None:
+        """当外部尝试二次启动本程序时，由单实例监听服务触发唤醒"""
+        # 1. 弹出浮窗并切到直接输入模式
+        QTimer.singleShot(0, self.popup.open_for_input)
+        # 2. 托盘气泡提示
+        try:
+            self.tray.showMessage(
+                "言蹊翻译 已在后台运行",
+                "快捷键: Alt + D | 划选文字即可极速翻译",
+                QSystemTrayIcon.MessageIcon.Information,
+                2500,
+            )
+        except Exception:
+            pass
+
     def shutdown(self) -> None:
         """安全释放所有资源"""
         for listener in self.listeners:
@@ -284,8 +301,22 @@ class 言蹊翻译App(QObject):
 
 
 YanXiApp = 言蹊翻译App
-YanCheApp = 言蹊翻译App
-言澈翻译App = 言蹊翻译App
+
+
+def configure_system_font(app: QApplication) -> None:
+    """为全系统所有窗口与弹窗控件设置现代标准 UI 字体"""
+    font = app.font()
+    if sys.platform == "win32":
+        font.setFamily("Microsoft YaHei UI")
+        font.setPointSize(9)
+    elif sys.platform.startswith("linux"):
+        font.setFamily("Noto Sans CJK SC")
+        font.setPointSize(10)
+    elif sys.platform == "darwin":
+        font.setFamily("PingFang SC")
+        font.setPointSize(12)
+    font.setStyleHint(QFont.StyleHint.SansSerif)
+    app.setFont(font)
 
 
 def main() -> None:
@@ -293,8 +324,21 @@ def main() -> None:
     # 强制无头或者有桌面环境支持
     app = QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # 保持后台常驻
+    configure_system_font(app)
+
+    # 跨平台单实例保护：检测是否已有多开
+    instance_guard = SingleInstance("yanxi_desktop_app")
+    if instance_guard.is_already_running():
+        print("💡 [SingleInstance] 检测到言蹊翻译已在后台运行中，已通知已有实例唤醒，本进程直接退出。")
+        sys.exit(0)
+
+    if not instance_guard.start_listen():
+        print("⚠️ [SingleInstance] 警告: 本地单实例监听启动失败，将以单机模式运行。")
 
     controller = 言蹊翻译App(app)
+    instance_guard.wakeup_received.connect(controller.on_external_wakeup)
+    # 保留对 instance_guard 的引用，避免垃圾回收
+    controller._instance_guard = instance_guard
     controller.tray.show()
 
     print(f"✨ 言蹊翻译 划词翻译已就绪！")

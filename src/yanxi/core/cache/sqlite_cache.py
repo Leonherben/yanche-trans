@@ -10,8 +10,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from yanche.core.config import AppConfig
-from yanche.core.models import TranslationResult
+from yanxi.core.config import AppConfig
+from yanxi.core.models import TranslationResult
 
 
 class SQLiteCache:

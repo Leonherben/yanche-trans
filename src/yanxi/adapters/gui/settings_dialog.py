@@ -30,9 +30,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from yanche.core.config import AppConfig, ProviderConfig
-from yanche.core.translator.factory import create_translator
-from yanche.adapters.gui.theme import AVAILABLE_THEMES
+from yanxi.core.config import AppConfig, ProviderConfig
+from yanxi.core.translator.factory import create_translator
+from yanxi.adapters.gui.theme import AVAILABLE_THEMES
 
 
 class _TestWorkerSignals(QObject):

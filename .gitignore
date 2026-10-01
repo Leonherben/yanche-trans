@@ -4,11 +4,30 @@ __pycache__/
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+*.egg
+
+# PyInstaller & Package artifacts
+*.spec.bak
+*.tar.gz
+*.zip
+release_download/
 
 # Virtual environments
-.venv
+.venv/
+env/
+venv/
 
-# Testing & Cache
+# Testing & Coverage
 .pytest_cache/
+.coverage
+htmlcov/
 *.db
+*.sqlite
+
+# IDE & OS files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

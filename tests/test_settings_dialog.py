@@ -5,8 +5,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtWidgets import QApplication
-from yanche.core.config import AppConfig
-from yanche.adapters.gui.settings_dialog import SettingsDialog
+from yanxi.core.config import AppConfig
+from yanxi.adapters.gui.settings_dialog import SettingsDialog
 
 
 @pytest.fixture(scope="session")

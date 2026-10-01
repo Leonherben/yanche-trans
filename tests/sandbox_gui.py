@@ -16,8 +16,8 @@ def ensure_xcb_cursor_loaded() -> None:
             _ld = os.environ.get("LD_LIBRARY_PATH", "")
             if _user_lib not in _ld.split(":"):
                 os.environ["LD_LIBRARY_PATH"] = f"{_user_lib}:{_ld}" if _ld else _user_lib
-                if not os.environ.get("_YANCHE_RESTARTED"):
-                    os.environ["_YANCHE_RESTARTED"] = "1"
+                if not os.environ.get("_YANXI_RESTARTED"):
+                    os.environ["_YANXI_RESTARTED"] = "1"
                     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 from PySide6.QtWidgets import (
@@ -31,9 +31,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
 )
 from PySide6.QtCore import Qt, QPoint
-from yanche.core.config import UIConfig
-from yanche.core.models import TranslationResult
-from yanche.adapters.gui.popup import PopupBubble
+from yanxi.core.config import UIConfig
+from yanxi.core.models import TranslationResult
+from yanxi.adapters.gui.popup import PopupBubble
 
 
 class SandboxWindow(QMainWindow):

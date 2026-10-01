@@ -6,9 +6,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import sys
 import pytest
 from PySide6.QtWidgets import QApplication
-from yanche.core.config import UIConfig
-from yanche.core.models import TranslationResult
-from yanche.adapters.gui.popup import PopupBubble
+from yanxi.core.config import UIConfig
+from yanxi.core.models import TranslationResult
+from yanxi.adapters.gui.popup import PopupBubble
 
 
 @pytest.fixture(scope="session")
@@ -334,7 +334,7 @@ def test_popup_opacity_change(qapp):
 
 
 def test_popup_mode_b_and_side_button(qapp):
-    from yanche.core.config import SelectionConfig
+    from yanxi.core.config import SelectionConfig
     saved = []
     sel_config = SelectionConfig(auto_popup_on_selection=False, enable_mouse_side_button=True)
     popup = PopupBubble(
@@ -356,8 +356,8 @@ def test_popup_mode_b_and_side_button(qapp):
 
 
 def test_hotkey_settings_dialog(qapp):
-    from yanche.core.config import SelectionConfig
-    from yanche.adapters.gui.popup import HotkeySettingsDialog
+    from yanxi.core.config import SelectionConfig
+    from yanxi.adapters.gui.popup import HotkeySettingsDialog
 
     saved = []
     sel_config = SelectionConfig(hotkey="<alt>+d", extra_hotkeys=["<ctrl>+<alt>+t"])
@@ -402,7 +402,7 @@ def test_hotkey_settings_dialog(qapp):
 def test_key_recorder_edit_and_qt_keys(qapp):
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QKeyEvent
-    from yanche.adapters.gui.popup import KeyRecorderEdit, qkey_to_pynput
+    from yanxi.adapters.gui.popup import KeyRecorderEdit, qkey_to_pynput
 
     edit = KeyRecorderEdit("<alt>+d")
     assert edit.get_hotkey_value() == "<alt>+d"
@@ -470,7 +470,7 @@ def test_original_text_edit_keys(qapp):
     from PySide6.QtGui import QKeyEvent
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QWidget
-    from yanche.adapters.gui.popup import OriginalTextEdit
+    from yanxi.adapters.gui.popup import OriginalTextEdit
 
     w = QWidget()
     edit = OriginalTextEdit(w)

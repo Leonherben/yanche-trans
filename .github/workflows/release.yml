@@ -37,7 +37,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxcb-cursor0 xsel
+          sudo apt-get install -y libxcb-cursor0 xsel libgl1-mesa-dev libegl1
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -56,7 +56,7 @@ jobs:
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: yanche-release-${{ matrix.platform }}
+          name: yanxi-release-${{ matrix.platform }}
           path: ${{ matrix.artifact_pattern }}
           if-no-files-found: error
 

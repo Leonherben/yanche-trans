@@ -3,8 +3,8 @@
 import tempfile
 from pathlib import Path
 import pytest
-from yanche.core.cache.sqlite_cache import SQLiteCache
-from yanche.core.models import TranslationResult
+from yanxi.core.cache.sqlite_cache import SQLiteCache
+from yanxi.core.models import TranslationResult
 
 
 @pytest.fixture

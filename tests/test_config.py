@@ -1,7 +1,7 @@
 """AppConfig 配置管理模块单元测试"""
 
 from pathlib import Path
-from yanche.core.config import AppConfig
+from yanxi.core.config import AppConfig
 
 
 def test_default_config():

@@ -30,15 +30,15 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 import pyperclip
-from yanche.core.config import UIConfig, SelectionConfig
-from yanche.core.models import TranslationResult
-from yanche.adapters.gui.theme import (
+from yanxi.core.config import UIConfig, SelectionConfig
+from yanxi.core.models import TranslationResult
+from yanxi.adapters.gui.theme import (
     AVAILABLE_THEMES,
     get_effective_theme,
     get_theme_stylesheet,
     get_theme_menu_style,
 )
-from yanche.adapters.selection.hotkey_fallback import (
+from yanxi.adapters.selection.hotkey_fallback import (
     normalize_to_pynput,
     format_for_display,
     is_valid_pynput_hotkey,

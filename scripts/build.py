@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 def get_version(project_root: Path) -> str:
-    init_file = project_root / "src" / "yanche" / "__init__.py"
+    init_file = project_root / "src" / "yanxi" / "__init__.py"
     if init_file.exists():
         match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', init_file.read_text(encoding="utf-8"))
         if match:
@@ -48,9 +48,6 @@ cp -rf "$SCRIPT_DIR"/* "$INSTALL_DIR/"
 # 建立全局命令软链接
 ln -sf "$INSTALL_DIR/yanxi" "$BIN_DIR/yanxi"
 ln -sf "$INSTALL_DIR/yanxi-cli" "$BIN_DIR/yanxi-cli"
-# 兼容别名
-ln -sf "$INSTALL_DIR/yanxi" "$BIN_DIR/yanche" 2>/dev/null || true
-ln -sf "$INSTALL_DIR/yanxi-cli" "$BIN_DIR/yanche-cli" 2>/dev/null || true
 
 # 安装图标
 if [ -f "$INSTALL_DIR/assets/icon.png" ]; then
@@ -91,7 +88,6 @@ set -e
 echo "🗑️ 正在卸载 言蹊翻译..."
 rm -rf "$HOME/.local/opt/yanxi"
 rm -f "$HOME/.local/bin/yanxi" "$HOME/.local/bin/yanxi-cli"
-rm -f "$HOME/.local/bin/yanche" "$HOME/.local/bin/yanche-cli"
 rm -f "$HOME/.local/share/applications/yanxi.desktop"
 rm -f "$HOME/.local/share/icons/hicolor/256x256/apps/yanxi.png"
 echo "✅ 言蹊翻译 已完全卸载。"
@@ -153,6 +149,33 @@ def create_archive(bundle_dir: Path, out_archive: Path, is_win: bool) -> None:
             tf.add(bundle_dir, arcname="yanxi")
 
 
+def prune_bundle(bundle_dir: Path) -> None:
+    """清理打包产物中未使用的多余静态资源和多国语言包，极致优化发布包体积"""
+    print("\n[3.5/4] 深度优化打包体积，清理多余静态与翻译资源...")
+    # 精简 Qt translations (清理 6MB+ 冗余多国语言包，仅保留中文或全部移除)
+    translations_dir = bundle_dir / "_internal" / "PySide6" / "Qt" / "translations"
+    if translations_dir.exists():
+        removed_count = 0
+        removed_bytes = 0
+        for f in list(translations_dir.glob("*.qm")):
+            if not f.name.startswith("qt_zh_CN"):
+                removed_bytes += f.stat().st_size
+                f.unlink()
+                removed_count += 1
+        print(f"   • 清理冗余多国语言包: 移除 {removed_count} 个文件 (释放 {removed_bytes / 1024 / 1024:.2f} MB)")
+
+    # 清理未使用的 Qt 插件 (如虚拟键盘、PDF 查看器等)
+    plugins_dir = bundle_dir / "_internal" / "PySide6" / "Qt" / "plugins"
+    if plugins_dir.exists():
+        plugin_pruned = 0
+        for p in list(plugins_dir.rglob("*")):
+            if p.is_file() and any(k in p.name.lower() for k in ("virtualkeyboard", "pdf")):
+                p.unlink()
+                plugin_pruned += 1
+        if plugin_pruned > 0:
+            print(f"   • 清理冗余 Qt 插件: 移除 {plugin_pruned} 个组件")
+
+
 def main() -> None:
     project_root = Path(__file__).resolve().parent.parent
     dist_dir = project_root / "dist"
@@ -164,10 +187,20 @@ def main() -> None:
     print(f"🚀 开始构建 言蹊翻译 (YanXi Trans) v{version} [{platform_name}]")
     print("=" * 60)
 
-    # 1. 确保图标生成
-    print("\n[1/4] 生成高清多尺寸应用图标...")
-    gen_icon_script = project_root / "scripts" / "generate_icons.py"
-    subprocess.run([sys.executable, str(gen_icon_script)], check=True)
+    # 1. 确保图标就绪
+    print("\n[1/4] 检查高清多尺寸应用图标...")
+    assets_dir = project_root / "assets"
+    png_icon = assets_dir / "icon.png"
+    ico_icon = assets_dir / "icon.ico"
+    if not (png_icon.exists() and ico_icon.exists()):
+        print("   • 未检测到预置图标，正在生成...")
+        gen_icon_script = project_root / "scripts" / "generate_icons.py"
+        try:
+            subprocess.run([sys.executable, str(gen_icon_script)], check=True)
+        except Exception as e:
+            print(f"⚠️ 图标生成跳过 (环境缺失图形渲染库): {e}")
+    else:
+        print(f"   • 使用已有静态高清图标: {png_icon.name}, {ico_icon.name}")
 
     # 2. 运行 PyInstaller
     print("\n[2/4] 运行 PyInstaller 构建独立程序目录...")
@@ -185,7 +218,6 @@ def main() -> None:
 
     # 3. 注入平台辅助文件
     print("\n[3/4] 注入平台专属辅助文件与说明...")
-    assets_dir = project_root / "assets"
     dist_assets = bundle_dir / "assets"
     dist_assets.mkdir(parents=True, exist_ok=True)
     if assets_dir.exists():
@@ -195,23 +227,13 @@ def main() -> None:
 
     if is_win:
         generate_windows_helpers(bundle_dir)
-        # 兼容性别名复制
-        yanxi_exe = bundle_dir / "yanxi.exe"
-        yanche_exe = bundle_dir / "yanche.exe"
-        if yanxi_exe.exists() and not yanche_exe.exists():
-            shutil.copy2(yanxi_exe, yanche_exe)
         archive_name = f"yanxi-v{version}-{platform_name}.zip"
     else:
         generate_linux_desktop_files(bundle_dir)
-        # 建立 Linux 兼容别名软链
-        yanxi_bin = bundle_dir / "yanxi"
-        yanche_bin = bundle_dir / "yanche"
-        if yanxi_bin.exists() and not yanche_bin.exists():
-            try:
-                yanche_bin.symlink_to("yanxi")
-            except Exception:
-                shutil.copy2(yanxi_bin, yanche_bin)
         archive_name = f"yanxi-v{version}-{platform_name}.tar.gz"
+
+    # 深度体积瘦身
+    prune_bundle(bundle_dir)
 
     # 4. 生成压缩归档包
     print("\n[4/4] 生成可供直接下载的发布压缩包...")

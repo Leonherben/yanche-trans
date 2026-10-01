@@ -5,8 +5,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtWidgets import QApplication
-from yanche.core.config import UIConfig
-from yanche.adapters.gui.theme import (
+from yanxi.core.config import UIConfig
+from yanxi.adapters.gui.theme import (
     detect_system_theme,
     get_effective_theme,
     get_theme_stylesheet,
@@ -14,7 +14,7 @@ from yanche.adapters.gui.theme import (
     AVAILABLE_THEMES,
     AVAILABLE_OPACITIES,
 )
-from yanche.adapters.gui.popup import PopupBubble
+from yanxi.adapters.gui.popup import PopupBubble
 
 
 @pytest.fixture(scope="session")

@@ -69,89 +69,122 @@ def get_effective_theme(theme_name: str) -> str:
     return "dark"
 
 
-def get_theme_stylesheet(effective_theme: str) -> str:
-    """获取指定主题的高保真 QSS 样式表"""
-    if effective_theme == "light":
-        return _LIGHT_STYLESHEET
-    elif effective_theme == "glass":
-        return _GLASS_STYLESHEET
+import sys
+
+
+def get_system_font_family() -> str:
+    """获取与当前操作系统深度契合的标准 UI 字体族"""
+    if sys.platform == "win32":
+        return '"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif'
+    elif sys.platform == "darwin":
+        return '-apple-system, "PingFang SC", "Helvetica Neue", "Hiragino Sans GB", sans-serif'
     else:
-        return _DARK_STYLESHEET
+        return '"Noto Sans CJK SC", "WenQuanYi Micro Hei", "PingFang SC", sans-serif'
+
+
+def _get_font_stylesheet_prefix() -> str:
+    font = get_system_font_family()
+    return f"""
+    * {{
+        font-family: {font};
+    }}
+    QWidget {{
+        font-family: {font};
+    }}
+    """
+
+
+def get_theme_stylesheet(effective_theme: str) -> str:
+    """获取指定主题的高保真 QSS 样式表（自动注入平台最佳字体）"""
+    prefix = _get_font_stylesheet_prefix()
+    if effective_theme == "light":
+        return prefix + _LIGHT_STYLESHEET
+    elif effective_theme == "glass":
+        return prefix + _GLASS_STYLESHEET
+    else:
+        return prefix + _DARK_STYLESHEET
 
 
 def get_theme_menu_style(effective_theme: str) -> str:
-    """获取与当前主题匹配的右键/弹出菜单样式"""
+    """获取与当前主题匹配的右键/弹出菜单样式（自动注入平台最佳字体）"""
+    font = get_system_font_family()
     if effective_theme == "light":
-        return """
-            QMenu {
+        return f"""
+            QMenu {{
                 background-color: #ffffff;
                 color: #1f2328;
                 border: 1px solid #d0d7de;
                 border-radius: 8px;
                 padding: 4px;
                 font-size: 12px;
-            }
-            QMenu::item {
+                font-family: {font};
+            }}
+            QMenu::item {{
                 padding: 6px 18px 6px 12px;
                 border-radius: 4px;
-            }
-            QMenu::item:selected {
+                font-family: {font};
+            }}
+            QMenu::item:selected {{
                 background-color: #0969da;
                 color: #ffffff;
-            }
-            QMenu::separator {
+            }}
+            QMenu::separator {{
                 height: 1px;
                 background-color: #d0d7de;
                 margin: 4px 6px;
-            }
+            }}
         """
     elif effective_theme == "glass":
-        return """
-            QMenu {
+        return f"""
+            QMenu {{
                 background-color: rgba(22, 27, 34, 0.90);
                 color: #f0f6fc;
                 border: 1px solid rgba(255, 255, 255, 0.2);
                 border-radius: 8px;
                 padding: 4px;
                 font-size: 12px;
-            }
-            QMenu::item {
+                font-family: {font};
+            }}
+            QMenu::item {{
                 padding: 6px 18px 6px 12px;
                 border-radius: 4px;
-            }
-            QMenu::item:selected {
+                font-family: {font};
+            }}
+            QMenu::item:selected {{
                 background-color: #1f6feb;
                 color: #ffffff;
-            }
-            QMenu::separator {
+            }}
+            QMenu::separator {{
                 height: 1px;
                 background-color: rgba(255, 255, 255, 0.15);
                 margin: 4px 6px;
-            }
+            }}
         """
     else:  # dark
-        return """
-            QMenu {
+        return f"""
+            QMenu {{
                 background-color: #161b22;
                 color: #e6edf3;
                 border: 1px solid #30363d;
                 border-radius: 8px;
                 padding: 4px;
                 font-size: 12px;
-            }
-            QMenu::item {
+                font-family: {font};
+            }}
+            QMenu::item {{
                 padding: 6px 18px 6px 12px;
                 border-radius: 4px;
-            }
-            QMenu::item:selected {
+                font-family: {font};
+            }}
+            QMenu::item:selected {{
                 background-color: #1f6feb;
                 color: #ffffff;
-            }
-            QMenu::separator {
+            }}
+            QMenu::separator {{
                 height: 1px;
                 background-color: #30363d;
                 margin: 4px 6px;
-            }
+            }}
         """
 
 

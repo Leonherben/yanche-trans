@@ -12,10 +12,10 @@ import threading
 from typing import Optional, Tuple, Dict, Any
 import httpx
 
-from yanche.core.config import ProviderConfig
-from yanche.core.models import TranslationRequest, TranslationResult
-from yanche.core.translator.base import BaseTranslator
-from yanche.core.translator.openai_compatible import create_safe_http_client
+from yanxi.core.config import ProviderConfig
+from yanxi.core.models import TranslationRequest, TranslationResult
+from yanxi.core.translator.base import BaseTranslator
+from yanxi.core.translator.openai_compatible import create_safe_http_client
 
 
 # 语言代码映射字典 (言蹊内部代码 -> 微软 API 代码)

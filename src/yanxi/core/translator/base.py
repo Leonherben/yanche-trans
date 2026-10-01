@@ -6,7 +6,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Tuple
-from yanche.core.models import TranslationRequest, TranslationResult
+from yanxi.core.models import TranslationRequest, TranslationResult
 
 
 class BaseTranslator(ABC):

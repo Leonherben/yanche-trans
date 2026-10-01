@@ -1,7 +1,7 @@
 """选词清洗逻辑单测"""
 
 import pytest
-from yanche.adapters.selection.base import BaseSelectionListener
+from yanxi.adapters.selection.base import BaseSelectionListener
 
 
 class DummySelectionListener(BaseSelectionListener):
@@ -37,7 +37,7 @@ def test_sanitize_too_long():
 
 
 def test_linux_x11_repeat_selection_and_reset(mocker):
-    from yanche.adapters.selection.linux_x11 import LinuxX11SelectionListener
+    from yanxi.adapters.selection.linux_x11 import LinuxX11SelectionListener
 
     callbacks = []
     empty_clicks = []
@@ -81,7 +81,7 @@ def test_linux_x11_repeat_selection_and_reset(mocker):
 
 
 def test_linux_x11_auto_popup_false(mocker):
-    from yanche.adapters.selection.linux_x11 import LinuxX11SelectionListener
+    from yanxi.adapters.selection.linux_x11 import LinuxX11SelectionListener
 
     callbacks = []
     empty_clicks = []
@@ -111,7 +111,7 @@ def test_linux_x11_auto_popup_false(mocker):
 def test_linux_x11_mouse_side_buttons(mocker):
     import time
     from pynput import mouse
-    from yanche.adapters.selection.linux_x11 import LinuxX11SelectionListener
+    from yanxi.adapters.selection.linux_x11 import LinuxX11SelectionListener
 
     callbacks = []
     listener = LinuxX11SelectionListener(
@@ -156,7 +156,7 @@ def test_linux_x11_mouse_side_buttons(mocker):
 
 def test_hotkey_selection_listener_trigger(mocker):
     from pynput import mouse
-    from yanche.adapters.selection.hotkey_fallback import HotkeySelectionListener
+    from yanxi.adapters.selection.hotkey_fallback import HotkeySelectionListener
 
     callbacks = []
     listener = HotkeySelectionListener(
@@ -177,7 +177,7 @@ def test_hotkey_selection_listener_trigger(mocker):
 def test_hotkey_selection_listener_no_selection_trigger(mocker):
     from pynput import mouse
     import pyperclip
-    from yanche.adapters.selection.hotkey_fallback import HotkeySelectionListener
+    from yanxi.adapters.selection.hotkey_fallback import HotkeySelectionListener
 
     callbacks = []
     no_sel_called = []
@@ -198,7 +198,7 @@ def test_hotkey_selection_listener_no_selection_trigger(mocker):
 
 
 def test_hotkey_helpers_normalize_and_display():
-    from yanche.adapters.selection.hotkey_fallback import (
+    from yanxi.adapters.selection.hotkey_fallback import (
         normalize_to_pynput,
         format_for_display,
         is_valid_pynput_hotkey,
