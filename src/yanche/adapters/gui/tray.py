@@ -43,7 +43,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
         self._listener_enabled = True
         self.provider_actions: dict[str, QAction] = {}
         self.lang_actions: dict[str, QAction] = {}
-        self.setToolTip("言澈翻译 划词翻译 (正在监听)")
+        self.setToolTip("言澈翻译")
         self._build_menu()
         self.activated.connect(self._on_tray_activated)
 
@@ -78,12 +78,12 @@ class 言澈翻译Tray(QSystemTrayIcon):
     def _build_menu(self) -> None:
         menu = QMenu()
 
-        # 1. 状态开关与模式 B
-        self.toggle_action = QAction("✔ 取词服务: 开启", menu)
+        # 1. 状态开关与划选翻译
+        self.toggle_action = QAction("取词服务: 开启", menu)
         self.toggle_action.triggered.connect(self._handle_toggle)
         menu.addAction(self.toggle_action)
 
-        self.auto_popup_action = QAction("⚡ 划选自动翻译 (模式 B)", menu, checkable=True)
+        self.auto_popup_action = QAction("划选自动翻译", menu, checkable=True)
         self.auto_popup_action.setChecked(self.config.selection.auto_popup_on_selection)
         self.auto_popup_action.triggered.connect(self._handle_toggle_auto_popup)
         menu.addAction(self.auto_popup_action)
@@ -91,7 +91,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
         menu.addSeparator()
 
         # 2. 翻译引擎单选菜单
-        provider_menu = menu.addMenu("🌐 翻译引擎 (Provider)")
+        provider_menu = menu.addMenu("翻译引擎")
         provider_group = QActionGroup(provider_menu)
         provider_group.setExclusive(True)
         self.provider_actions.clear()
@@ -105,7 +105,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
             self.provider_actions[name] = act
 
         # 3. 目标语言选择
-        lang_menu = menu.addMenu("🗣 目标语言")
+        lang_menu = menu.addMenu("目标语言")
         lang_group = QActionGroup(lang_menu)
         lang_group.setExclusive(True)
         self.lang_actions.clear()
@@ -122,7 +122,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
         menu.addSeparator()
 
         # 4. 主题与外观设置
-        theme_menu = menu.addMenu("🎨 主题风格")
+        theme_menu = menu.addMenu("主题风格")
         theme_group = QActionGroup(theme_menu)
         theme_group.setExclusive(True)
         curr_theme = getattr(self.config.ui, "theme", "auto")
@@ -134,7 +134,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
             theme_group.addAction(act)
             theme_menu.addAction(act)
 
-        opacity_menu = menu.addMenu("🪟 窗口透明度")
+        opacity_menu = menu.addMenu("窗口透明度")
         opacity_group = QActionGroup(opacity_menu)
         opacity_group.setExclusive(True)
         curr_opacity = getattr(self.config.ui, "window_opacity", 0.95)
@@ -149,19 +149,19 @@ class 言澈翻译Tray(QSystemTrayIcon):
         menu.addSeparator()
 
         # 5. 清理本地缓存
-        clear_cache_act = QAction("🧹 清理本地翻译缓存", menu)
+        clear_cache_act = QAction("清空缓存", menu)
         clear_cache_act.triggered.connect(self._handle_clear_cache)
         menu.addAction(clear_cache_act)
 
         # 6. 逃生键提示 (只读展示)
-        panic_hint = QAction(f"⚡ 逃生热键: {self.config.selection.panic_hotkey}", menu)
+        panic_hint = QAction(f"强制退出: {self.config.selection.panic_hotkey}", menu)
         panic_hint.setEnabled(False)
         menu.addAction(panic_hint)
 
         menu.addSeparator()
 
         # 7. 退出程序
-        quit_act = QAction("🚪 退出 言澈翻译", menu)
+        quit_act = QAction("退出", menu)
         quit_act.triggered.connect(self._handle_quit)
         menu.addAction(quit_act)
 
@@ -184,17 +184,17 @@ class 言澈翻译Tray(QSystemTrayIcon):
         self.config.save()
         if self.on_toggle_auto_popup:
             self.on_toggle_auto_popup(checked)
-        tip = "模式 B 已开启：划选松开自动翻译" if checked else "模式 B 已关闭：仅快捷键/侧键触发 (零打扰)"
+        tip = "已开启划选自动翻译" if checked else "已关闭划选自动翻译 (仅快捷键触发)"
         self.showMessage("言澈翻译", tip, QSystemTrayIcon.MessageIcon.Information, 1500)
 
     def _handle_toggle(self) -> None:
         self._listener_enabled = not self._listener_enabled
         if self._listener_enabled:
-            self.toggle_action.setText("✔ 划词监听: 开启")
-            self.setToolTip("言澈翻译 划词翻译 (正在监听)")
+            self.toggle_action.setText("取词服务: 开启")
+            self.setToolTip("言澈翻译")
         else:
-            self.toggle_action.setText("✖ 划词监听: 已暂停")
-            self.setToolTip("言澈翻译 划词翻译 (已暂停)")
+            self.toggle_action.setText("取词服务: 已暂停")
+            self.setToolTip("言澈翻译 (已暂停)")
 
         if self.on_toggle_listener:
             self.on_toggle_listener(self._listener_enabled)
