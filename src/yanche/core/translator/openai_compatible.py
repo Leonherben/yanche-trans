@@ -7,9 +7,9 @@ from __future__ import annotations
 import time
 from typing import Tuple
 import httpx
-from quicktrans.core.config import ProviderConfig
-from quicktrans.core.models import TranslationRequest, TranslationResult
-from quicktrans.core.translator.base import BaseTranslator
+from yanche.core.config import ProviderConfig
+from yanche.core.models import TranslationRequest, TranslationResult
+from yanche.core.translator.base import BaseTranslator
 
 
 class OpenAICompatibleTranslator(BaseTranslator):

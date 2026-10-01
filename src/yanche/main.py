@@ -1,4 +1,4 @@
-"""QuickTrans 桌面划词翻译主服务 (System Daemon & Entrypoint)
+"""言澈翻译 桌面划词翻译主服务 (System Daemon & Entrypoint)
 
 整合系统托盘、无焦点悬浮窗、X11/热键选词监听器与 Panic Failsafe 逃生通道。
 """
@@ -13,18 +13,18 @@ from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QApplication
 from pynput import keyboard
 
-from quicktrans.core.config import AppConfig
-from quicktrans.core.models import TranslationRequest, TranslationResult
-from quicktrans.core.translator.factory import create_translator
-from quicktrans.core.cache.sqlite_cache import SQLiteCache
-from quicktrans.adapters.gui.popup import PopupBubble
-from quicktrans.adapters.gui.tray import QuickTransTray
-from quicktrans.adapters.selection.base import BaseSelectionListener
-from quicktrans.adapters.selection.linux_x11 import LinuxX11SelectionListener
-from quicktrans.adapters.selection.hotkey_fallback import HotkeySelectionListener
+from yanche.core.config import AppConfig
+from yanche.core.models import TranslationRequest, TranslationResult
+from yanche.core.translator.factory import create_translator
+from yanche.core.cache.sqlite_cache import SQLiteCache
+from yanche.adapters.gui.popup import PopupBubble
+from yanche.adapters.gui.tray import 言澈翻译Tray
+from yanche.adapters.selection.base import BaseSelectionListener
+from yanche.adapters.selection.linux_x11 import LinuxX11SelectionListener
+from yanche.adapters.selection.hotkey_fallback import HotkeySelectionListener
 
 
-class QuickTransApp(QObject):
+class 言澈翻译App(QObject):
     """主调度控制器"""
 
     def __init__(self, qapp: QApplication) -> None:
@@ -39,7 +39,7 @@ class QuickTransApp(QObject):
 
         # 悬浮窗与托盘
         self.popup = PopupBubble(self.config.ui)
-        self.tray = QuickTransTray(
+        self.tray = 言澈翻译Tray(
             config=self.config,
             on_toggle_listener=self.set_listener_enabled,
             on_provider_change=self.set_provider,
@@ -168,10 +168,10 @@ def main() -> None:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # 保持后台常驻
 
-    controller = QuickTransApp(app)
+    controller = 言澈翻译App(app)
     controller.tray.show()
 
-    print(f"✨ QuickTrans 划词翻译已就绪！")
+    print(f"✨ 言澈翻译 划词翻译已就绪！")
     print(f"   • 当前默认 Provider: {controller.config.default_provider}")
     print(f"   • 目标语言: {controller.config.default_target_lang}")
     print(f"   • 紧急逃生键: {controller.config.selection.panic_hotkey}")

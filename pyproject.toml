@@ -1,5 +1,5 @@
 [project]
-name = "quicktrans"
+name = "yanche"
 version = "0.1.0"
 description = "轻量级、跨平台 (Linux & Windows) 桌面划词翻译工具，聚合大模型与传统翻译 API"
 readme = "README.md"
@@ -16,8 +16,8 @@ dependencies = [
 ]
 
 [project.scripts]
-quicktrans = "quicktrans:main"
-quicktrans-cli = "quicktrans.cli.main:main"
+yanche = "yanche:main"
+yanche-cli = "yanche.cli.main:main"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.13.0"]

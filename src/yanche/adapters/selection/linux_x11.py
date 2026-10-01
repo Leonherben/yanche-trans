@@ -10,7 +10,7 @@ import threading
 import time
 from typing import Optional, Tuple
 from pynput import mouse
-from quicktrans.adapters.selection.base import BaseSelectionListener, SelectionCallback
+from yanche.adapters.selection.base import BaseSelectionListener, SelectionCallback
 
 
 class LinuxX11SelectionListener(BaseSelectionListener):

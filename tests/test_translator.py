@@ -3,9 +3,9 @@
 from unittest.mock import MagicMock, patch
 import pytest
 import httpx
-from quicktrans.core.config import ProviderConfig
-from quicktrans.core.models import TranslationRequest
-from quicktrans.core.translator.openai_compatible import OpenAICompatibleTranslator
+from yanche.core.config import ProviderConfig
+from yanche.core.models import TranslationRequest
+from yanche.core.translator.openai_compatible import OpenAICompatibleTranslator
 
 
 @pytest.fixture

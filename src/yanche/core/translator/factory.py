@@ -4,9 +4,9 @@
 """
 
 from __future__ import annotations
-from quicktrans.core.config import ProviderConfig
-from quicktrans.core.translator.base import BaseTranslator
-from quicktrans.core.translator.openai_compatible import OpenAICompatibleTranslator
+from yanche.core.config import ProviderConfig
+from yanche.core.translator.base import BaseTranslator
+from yanche.core.translator.openai_compatible import OpenAICompatibleTranslator
 
 
 def create_translator(config: ProviderConfig) -> BaseTranslator:

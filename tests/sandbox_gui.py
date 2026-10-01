@@ -17,15 +17,15 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
 )
 from PySide6.QtCore import Qt, QPoint
-from quicktrans.core.config import UIConfig
-from quicktrans.core.models import TranslationResult
-from quicktrans.adapters.gui.popup import PopupBubble
+from yanche.core.config import UIConfig
+from yanche.core.models import TranslationResult
+from yanche.adapters.gui.popup import PopupBubble
 
 
 class SandboxWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("QuickTrans GUI Sandbox (无焦点测试沙盒)")
+        self.setWindowTitle("言澈翻译 GUI Sandbox (无焦点测试沙盒)")
         self.resize(500, 320)
 
         self.ui_config = UIConfig()

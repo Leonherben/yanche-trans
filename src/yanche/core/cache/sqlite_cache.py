@@ -10,8 +10,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from quicktrans.core.config import AppConfig
-from quicktrans.core.models import TranslationResult
+from yanche.core.config import AppConfig
+from yanche.core.models import TranslationResult
 
 
 class SQLiteCache:

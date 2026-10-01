@@ -1,4 +1,4 @@
-"""QuickTrans 命令行工具 (CLI Prototype)
+"""言澈翻译 命令行工具 (CLI Prototype)
 
 提供终端直接翻译、Provider 切换、API 密钥设置及连通性测试。
 """
@@ -6,16 +6,16 @@
 from __future__ import annotations
 import argparse
 import sys
-from quicktrans.core.config import AppConfig
-from quicktrans.core.models import TranslationRequest
-from quicktrans.core.translator.factory import create_translator
-from quicktrans.core.cache.sqlite_cache import SQLiteCache
+from yanche.core.config import AppConfig
+from yanche.core.models import TranslationRequest
+from yanche.core.translator.factory import create_translator
+from yanche.core.cache.sqlite_cache import SQLiteCache
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="quicktrans-cli",
-        description="QuickTrans 极简划词翻译核心终端工具",
+        prog="yanche-cli",
+        description="言澈翻译 极简划词翻译核心终端工具",
     )
     parser.add_argument("text", nargs="?", help="待翻译文本")
     parser.add_argument("-s", "--source", default=None, help="源语言代码（默认: auto）")
@@ -105,7 +105,7 @@ def main() -> None:
 
     # 交互模式
     if args.interactive:
-        print(f"=== QuickTrans 交互模式 (Provider: {active_provider}) ===")
+        print(f"=== 言澈翻译 交互模式 (Provider: {active_provider}) ===")
         print("输入待翻译内容后回车，按 Ctrl+C 或输入 'exit' 退出：\n")
         try:
             while True:
@@ -123,7 +123,7 @@ def main() -> None:
     if args.text:
         do_translate(args.text, config, cache, source_lang, target_lang, active_provider)
     else:
-        print("提示: 请输入待翻译的文本，或运行 `quicktrans-cli --help` 查看帮助。")
+        print("提示: 请输入待翻译的文本，或运行 `yanche-cli --help` 查看帮助。")
 
 
 if __name__ == "__main__":

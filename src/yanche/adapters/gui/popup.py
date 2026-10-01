@@ -19,8 +19,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 import pyperclip
-from quicktrans.core.config import UIConfig
-from quicktrans.core.models import TranslationResult
+from yanche.core.config import UIConfig
+from yanche.core.models import TranslationResult
 
 
 class PopupBubble(QWidget):
@@ -78,7 +78,7 @@ class PopupBubble(QWidget):
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(0, 0, 0, 0)
 
-        self.provider_label = QLabel("QuickTrans", self)
+        self.provider_label = QLabel("言澈翻译", self)
         self.provider_label.setStyleSheet("color: #79c0ff; font-weight: bold; font-size: 11px;")
         top_bar.addWidget(self.provider_label)
 
@@ -188,7 +188,7 @@ class PopupBubble(QWidget):
 
     def display_loading(self, text: str, cursor_x: int, cursor_y: int) -> None:
         """显示加载状态并定位在鼠标光标周围"""
-        self.provider_label.setText("QuickTrans ⏳")
+        self.provider_label.setText("言澈翻译 ⏳")
         self.latency_label.setText("正在翻译中...")
         display_preview = text if len(text) <= 60 else text[:57] + "..."
         self.original_label.setText(display_preview)

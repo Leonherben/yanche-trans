@@ -1,7 +1,7 @@
 """选词清洗逻辑单测"""
 
 import pytest
-from quicktrans.adapters.selection.base import BaseSelectionListener
+from yanche.adapters.selection.base import BaseSelectionListener
 
 
 class DummySelectionListener(BaseSelectionListener):

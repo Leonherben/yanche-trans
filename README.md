@@ -1,4 +1,4 @@
-# QuickTrans 跨平台智能划词翻译软件 (Linux & Windows)
+# 言澈翻译 跨平台智能划词翻译软件 (Linux & Windows)
 
 > 基于 Python 3.12 + PySide6 构建的轻量级、无焦点窃取的桌面划词翻译工具，深度聚合 OpenAI 兼容大模型 API 与传统翻译服务。
 
@@ -34,41 +34,41 @@ uv sync
 ```
 
 ### 2. 配置翻译 API Key
-QuickTrans 原生支持所有兼容 OpenAI 规范的提供商（DeepSeek、智谱 GLM、OpenAI、Moonshot/Kimi、Ollama 本地大模型等）。
+言澈翻译 原生支持所有兼容 OpenAI 规范的提供商（DeepSeek、智谱 GLM、OpenAI、Moonshot/Kimi、Ollama 本地大模型等）。
 
 可以通过命令行快速配置 API 密钥：
 ```bash
 # 配置 DeepSeek Key
-uv run quicktrans-cli --set-key deepseek sk-your-deepseek-api-key
+uv run yanche-cli --set-key deepseek sk-your-deepseek-api-key
 
 # 或配置 OpenAI Key
-uv run quicktrans-cli --set-key openai sk-your-openai-api-key
+uv run yanche-cli --set-key openai sk-your-openai-api-key
 
 # 或配置 智谱 GLM Key
-uv run quicktrans-cli --set-key zhipu your-zhipu-api-key
+uv run yanche-cli --set-key zhipu your-zhipu-api-key
 ```
-配置文件将持久化存储于 `~/.config/quicktrans/config.json`（Linux）或 `%APPDATA%/quicktrans/config.json`（Windows）。
+配置文件将持久化存储于 `~/.config/yanche/config.json`（Linux）或 `%APPDATA%/yanche/config.json`（Windows）。
 
 ### 3. 测试 API 连通性
 ```bash
-uv run quicktrans-cli --test
+uv run yanche-cli --test
 ```
 
 ### 4. 运行终端 CLI 翻译
 ```bash
 # 单次快速翻译
-uv run quicktrans-cli "Artificial Intelligence is reshaping software development."
+uv run yanche-cli "Artificial Intelligence is reshaping software development."
 
 # 指定目标语言（如日语）
-uv run quicktrans-cli "Good morning!" -t ja
+uv run yanche-cli "Good morning!" -t ja
 
 # 进入终端交互模式
-uv run quicktrans-cli -i
+uv run yanche-cli -i
 ```
 
 ### 5. 启动桌面常驻划词服务 (GUI + 托盘)
 ```bash
-uv run quicktrans
+uv run yanche
 ```
 启动后：
 - 屏幕右下角任务栏出现托盘图标；
@@ -96,7 +96,7 @@ uv run quicktrans
 ├── docs/
 │   ├── architecture.md         # 架构设计与领域模型规范
 │   └── interaction.md          # 划词交互、防焦点抢占时序规范
-├── src/quicktrans/
+├── src/yanche/
 │   ├── core/                   # 纯业务核心层
 │   │   ├── models.py           # 翻译请求/响应实体
 │   │   ├── config.py           # 跨平台配置持久化

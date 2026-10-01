@@ -99,7 +99,7 @@ class AppConfig(BaseModel):
             base_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
         else:
             base_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-        return base_dir / "quicktrans" / "config.json"
+        return base_dir / "yanche" / "config.json"
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> AppConfig:

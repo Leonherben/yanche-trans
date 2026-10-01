@@ -1,6 +1,6 @@
 # 划词翻译交互、防焦点窃取与状态机规范 (Interaction Specification)
 
-本文档定义 QuickTrans 的屏幕交互时序、防焦点窃取策略以及异常状态下的逃生机制，严格对照 [agent.md](file:///home/malus/Project/Tts/agent.md) 的实战防坑守则。
+本文档定义 言澈翻译 的屏幕交互时序、防焦点窃取策略以及异常状态下的逃生机制，严格对照 [agent.md](file:///home/malus/Project/Tts/agent.md) 的实战防坑守则。
 
 ---
 

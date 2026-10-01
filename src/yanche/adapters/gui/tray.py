@@ -8,10 +8,10 @@ from typing import Callable, Optional
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
-from quicktrans.core.config import AppConfig
+from yanche.core.config import AppConfig
 
 
-class QuickTransTray(QSystemTrayIcon):
+class 言澈翻译Tray(QSystemTrayIcon):
     """跨平台系统托盘"""
 
     def __init__(
@@ -34,7 +34,7 @@ class QuickTransTray(QSystemTrayIcon):
         self.on_quit = on_quit
 
         self._listener_enabled = True
-        self.setToolTip("QuickTrans 划词翻译 (正在监听)")
+        self.setToolTip("言澈翻译 划词翻译 (正在监听)")
         self._build_menu()
 
     def _create_vector_icon(self) -> QIcon:
@@ -103,7 +103,7 @@ class QuickTransTray(QSystemTrayIcon):
         menu.addSeparator()
 
         # 6. 退出程序
-        quit_act = QAction("🚪 退出 QuickTrans", menu)
+        quit_act = QAction("🚪 退出 言澈翻译", menu)
         quit_act.triggered.connect(self._handle_quit)
         menu.addAction(quit_act)
 
@@ -113,10 +113,10 @@ class QuickTransTray(QSystemTrayIcon):
         self._listener_enabled = not self._listener_enabled
         if self._listener_enabled:
             self.toggle_action.setText("✔ 划词监听: 开启")
-            self.setToolTip("QuickTrans 划词翻译 (正在监听)")
+            self.setToolTip("言澈翻译 划词翻译 (正在监听)")
         else:
             self.toggle_action.setText("✖ 划词监听: 已暂停")
-            self.setToolTip("QuickTrans 划词翻译 (已暂停)")
+            self.setToolTip("言澈翻译 划词翻译 (已暂停)")
 
         if self.on_toggle_listener:
             self.on_toggle_listener(self._listener_enabled)
