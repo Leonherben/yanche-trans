@@ -55,6 +55,8 @@ class 言澈翻译App(QObject):
         self.popup = PopupBubble(
             config=self.config.ui,
             on_switch_provider=self.switch_provider_and_retranslate,
+            on_save_config=self.config.save,
+            on_clear_cache=self.cache.clear,
             available_providers=list(self.config.providers.keys()),
         )
         self.popup.closed.connect(self._on_popup_closed)

@@ -133,3 +133,95 @@ def test_popup_closed_signal(qapp):
     popup.hide()
     assert len(closed_fired) == 1
     popup.close()
+
+
+def test_popup_card_components(qapp):
+    config = UIConfig()
+    popup = PopupBubble(config)
+    assert hasattr(popup, "orig_card")
+    assert hasattr(popup, "trans_card")
+    assert hasattr(popup, "size_grip")
+    assert hasattr(popup, "copy_orig_btn")
+    assert hasattr(popup, "copy_btn")
+    assert hasattr(popup, "more_btn")
+    assert hasattr(popup, "pin_btn")
+    popup.close()
+
+
+def test_popup_pin_and_fixed_position(qapp):
+    config = UIConfig()
+    saved = []
+    popup = PopupBubble(config, on_save_config=lambda: saved.append(True))
+
+    # 1. 移动到 (200, 300) 并固定
+    popup.move(200, 300)
+    assert not popup._is_pinned
+    popup._toggle_pin()
+    assert popup._is_pinned
+    assert popup.config.is_pinned
+    assert popup.config.fixed_x == 200
+    assert popup.config.fixed_y == 300
+    assert len(saved) >= 1
+
+    # 2. 模拟划词选词触发 display_loading 传入新的光标位置 (800, 900)
+    # 因为已锁定，窗口必须留在 (200, 300)，坚决不跟随光标
+    popup.display_loading("new selected text", 800, 900)
+    assert popup.x() == 200
+    assert popup.y() == 300
+
+    # 3. 再次取消固定
+    popup._toggle_pin()
+    assert not popup._is_pinned
+    assert not popup.config.is_pinned
+    assert popup.config.fixed_x is None
+    assert popup.config.fixed_y is None
+    popup.close()
+
+
+def test_popup_copy_buttons_and_meta(qapp):
+    import pyperclip
+    config = UIConfig()
+    popup = PopupBubble(config)
+
+    # 测试元数据计数
+    assert popup._format_meta("Hello World") == "2 词 · 11 字符"
+    assert popup._format_meta("言澈划词翻译") == "6 字符"
+
+    result = TranslationResult(
+        original_text="Artificial Intelligence",
+        translated_text="人工智能",
+        source_lang="en",
+        target_lang="zh-CN",
+        provider="deepseek",
+    )
+    popup.display_result(result)
+    assert "2 词" in popup.orig_meta_label.text()
+
+    # 模拟点击复制原文
+    popup._copy_original()
+    assert pyperclip.paste() == "Artificial Intelligence"
+
+    # 模拟点击复制译文
+    popup._copy_result()
+    assert pyperclip.paste() == "人工智能"
+
+    popup.close()
+
+
+def test_popup_reset_window_geometry(qapp):
+    config = UIConfig(window_width=600, window_height=500, fixed_x=100, fixed_y=100, is_pinned=True)
+    saved = []
+    popup = PopupBubble(config, on_save_config=lambda: saved.append(True))
+    assert popup._is_pinned
+
+    # 触发恢复默认
+    popup._reset_window_geometry()
+    assert not popup._is_pinned
+    assert not popup.config.is_pinned
+    assert popup.config.window_width == 450
+    assert popup.config.window_height == 320
+    assert popup.config.fixed_x is None
+    assert popup.config.fixed_y is None
+    assert len(saved) >= 1
+    popup.close()
+

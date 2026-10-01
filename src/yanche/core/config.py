@@ -42,10 +42,15 @@ class UIConfig(BaseModel):
     """悬浮窗 UI 配置"""
     theme: str = "dark"              # dark | light | auto
     font_size: int = 13              # 字号
-    max_width: int = 420             # 最大宽度
-    max_height: int = 300            # 最大高度
+    min_width: int = 360             # 最小宽度
+    min_height: int = 200            # 最小高度
+    window_width: int = 450          # 初始/用户拉伸记忆宽度
+    window_height: int = 320         # 初始/用户拉伸记忆高度
+    fixed_x: Optional[int] = None    # 固定位置 X 坐标
+    fixed_y: Optional[int] = None    # 固定位置 Y 坐标
+    is_pinned: bool = False          # 是否记忆固定状态
     auto_hide_seconds: int = 8       # 失去交互后自动收起秒数（0表示不自动收起）
-    window_opacity: float = 0.95     # 窗口透明度
+    window_opacity: float = 0.98     # 窗口透明度
 
 
 def _default_providers() -> Dict[str, ProviderConfig]:

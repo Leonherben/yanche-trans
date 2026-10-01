@@ -110,8 +110,9 @@ class SandboxWindow(QMainWindow):
             latency_ms=0.0,
             from_cache=True,
         )
+        if not self.popup._is_pinned:
+            self.popup.adjust_position(x, y)
         self.popup.display_result(result)
-        self.popup.adjust_position(x, y)
 
     def _trigger_mock_error(self) -> None:
         x, y = self._get_target_pos()
@@ -124,8 +125,9 @@ class SandboxWindow(QMainWindow):
             latency_ms=120.0,
             from_cache=False,
         )
+        if not self.popup._is_pinned:
+            self.popup.adjust_position(x, y)
         self.popup.display_result(result)
-        self.popup.adjust_position(x, y)
 
     def closeEvent(self, event) -> None:
         self.popup.close()
