@@ -86,6 +86,13 @@ class UIConfig(BaseModel):
     window_opacity: float = 0.95     # 窗口透明度 (0.4 ~ 1.0)
 
 
+class UpdateConfig(BaseModel):
+    """在线软件更新偏好"""
+    auto_check_update: bool = True     # 启动时是否自动检查更新
+    check_interval_hours: int = 24     # 自动检查时间间隔（小时）
+    last_check_timestamp: float = 0.0  # 上次检测时间戳
+
+
 def _default_providers() -> Dict[str, ProviderConfig]:
     return {
         "deepseek": ProviderConfig(
@@ -136,6 +143,7 @@ class AppConfig(BaseModel):
     providers: Dict[str, ProviderConfig] = Field(default_factory=_default_providers)
     selection: SelectionConfig = Field(default_factory=SelectionConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
+    update: UpdateConfig = Field(default_factory=UpdateConfig)
 
     @classmethod
     def get_default_config_path(cls) -> Path:

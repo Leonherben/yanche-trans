@@ -1,6 +1,6 @@
 [project]
 name = "yanxi"
-version = "0.1.4"
+version = "0.1.5"
 description = "言蹊翻译：轻量级、跨平台 (Linux & Windows) 桌面划词翻译工具，聚合大模型与传统翻译 API"
 readme = "README.md"
 authors = [

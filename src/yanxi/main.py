@@ -35,10 +35,11 @@ from yanxi.core.models import TranslationRequest, TranslationResult
 from yanxi.core.translator.factory import create_translator
 from yanxi.core.cache.sqlite_cache import SQLiteCache
 from yanxi.core.single_instance import SingleInstance
+from yanxi.core.updater import check_github_update, UpdateInfo
 from yanxi.adapters.gui.popup import PopupBubble
 from yanxi.adapters.gui.tray import 言蹊翻译Tray
 from yanxi.adapters.gui.settings_dialog import SettingsDialog
-from yanxi.adapters.gui.icon_helper import get_app_icon
+from yanxi.adapters.gui.icon_helper import get_app_icon, configure_windows_app_id
 from yanxi.adapters.selection.base import BaseSelectionListener
 from yanxi.adapters.selection.linux_x11 import LinuxX11SelectionListener
 from yanxi.adapters.selection.hotkey_fallback import HotkeySelectionListener
@@ -83,6 +84,7 @@ class 言蹊翻译App(QObject):
             on_toggle_auto_popup=self._on_toggle_auto_popup,
             on_clear_cache=self.cache.clear,
             on_open_settings=self.open_settings,
+            on_check_update=self.open_update_dialog,
             on_quit=self.shutdown,
         )
 
@@ -92,6 +94,10 @@ class 言蹊翻译App(QObject):
 
         self._init_listeners()
         self._init_panic_failsafe()
+
+        # 静默后台检查更新（启动 3 秒后执行，避免阻塞冷启动）
+        if getattr(self.config, "update", None) and self.config.update.auto_check_update:
+            QTimer.singleShot(3000, self._check_update_silently)
 
         # 系统退出钩子
         atexit.register(self.shutdown)
@@ -251,6 +257,36 @@ class 言蹊翻译App(QObject):
     def _on_settings_closed(self, result: int) -> None:
         self._settings_dialog = None
 
+    def open_update_dialog(self) -> None:
+        """打开偏好设置中心并定位到更新选项卡自动检查更新"""
+        self.open_settings()
+        if self._settings_dialog:
+            self._settings_dialog.trigger_check_update()
+
+    def _check_update_silently(self) -> None:
+        """后台静默检测更新，若发现新版本则通过托盘通知"""
+        def _worker():
+            try:
+                info = check_github_update()
+                if info.has_update and info.latest_version:
+                    QTimer.singleShot(0, lambda: self._notify_new_version(info))
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _notify_new_version(self, info: UpdateInfo) -> None:
+        try:
+            self.tray.showMessage(
+                "言蹊翻译 发现新版本",
+                f"已检测到新版本 v{info.latest_version}，点击托盘菜单【检查更新】即可升级！",
+                QSystemTrayIcon.MessageIcon.Information,
+                6000,
+            )
+        except Exception:
+            pass
+
+
     def on_settings_saved(self, new_config: AppConfig) -> None:
         """设置保存后的热重载"""
         self.config = new_config
@@ -322,6 +358,7 @@ def configure_system_font(app: QApplication) -> None:
 
 def main() -> None:
     ensure_xcb_cursor_loaded()
+    configure_windows_app_id()
     # 强制无头或者有桌面环境支持
     app = QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # 保持后台常驻

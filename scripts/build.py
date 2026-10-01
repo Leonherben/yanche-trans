@@ -113,20 +113,45 @@ exit
     (bundle_dir / "启动言蹊翻译.bat").write_text(bat_content, encoding="utf-8")
     (bundle_dir / "run_yanxi.bat").write_text(bat_content, encoding="utf-8")
 
+    # 创建桌面快捷方式 (带精准 icon.ico 图标绑定)
+    vbs_content = """Set WshShell = CreateObject("WScript.Shell")
+strDesktop = WshShell.SpecialFolders("Desktop")
+strCurrentDir = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
+Set oShellLink = WshShell.CreateShortcut(strDesktop & "\\言蹊翻译.lnk")
+oShellLink.TargetPath = strCurrentDir & "\\yanxi.exe"
+oShellLink.WorkingDirectory = strCurrentDir
+oShellLink.Description = "言蹊翻译 - 极速桌面划词翻译工具"
+If CreateObject("Scripting.FileSystemObject").FileExists(strCurrentDir & "\\assets\\icon.ico") Then
+    oShellLink.IconLocation = strCurrentDir & "\\assets\\icon.ico,0"
+Else
+    oShellLink.IconLocation = strCurrentDir & "\\yanxi.exe,0"
+End If
+oShellLink.Save
+MsgBox "桌面快捷方式已成功创建！" & vbCrLf & "可在桌面双击【言蹊翻译】图标启动应用。", 64, "言蹊翻译"
+"""
+    (bundle_dir / "创建桌面快捷方式.vbs").write_text(vbs_content, encoding="utf-8")
+
+    shortcut_bat = """@echo off
+cscript //nologo "%~dp0创建桌面快捷方式.vbs"
+"""
+    (bundle_dir / "创建桌面快捷方式.bat").write_text(shortcut_bat, encoding="utf-8")
+
     readme = bundle_dir / "README_使用说明.txt"
     readme.write_text(
         """言蹊翻译 (YanXi Trans) Windows 绿色免安装版
 ==================================================
 
-【如何启动】
+【如何使用】
 1. 双击运行 "启动言蹊翻译.bat" 或 "yanxi.exe"；
-2. 程序启动后将在屏幕右下角系统托盘静默常驻；
-3. 选中文本按下快捷键 (默认 Alt+D) 即可立即划词翻译！
+2. 推荐双击 "创建桌面快捷方式.vbs"，将在桌面生成带言蹊精美图标的快捷方式；
+3. 程序启动后将在屏幕右下角系统托盘静默常驻；
+4. 选中文本按下快捷键 (默认 Alt+D) 即可立即划词翻译！
 
 【功能亮点】
 - 预置免费微软翻译 (Microsoft Translator)，开箱即用免配置
-- 悬浮窗采用无焦点置顶防抢占技术，打字不中断
+- 悬浮窗采用无焦点置顶防抢占技术，打字输入不中断
 - 右下角托盘图标支持一键切换翻译引擎、暗黑/亮色主题与透明度
+- 偏好设置中内置【软件更新与关于】，支持在线检测 GitHub 最新版本并一键升级
 
 【命令行支持】
 可在当前目录下打开 CMD / PowerShell 运行：

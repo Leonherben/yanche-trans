@@ -10,6 +10,7 @@ import threading
 from typing import Callable, Dict, Optional
 
 from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtGui import QPixmap, QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -26,18 +27,25 @@ from PySide6.QtWidgets import (
     QSlider,
     QSpinBox,
     QTabWidget,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+import yanxi
 from yanxi.core.config import AppConfig, ProviderConfig
 from yanxi.core.translator.factory import create_translator
+from yanxi.core.updater import check_github_update, open_release_page, UpdateInfo
 from yanxi.adapters.gui.theme import AVAILABLE_THEMES
-from yanxi.adapters.gui.icon_helper import get_app_icon
+from yanxi.adapters.gui.icon_helper import get_app_icon, find_icon_path
 
 
 class _TestWorkerSignals(QObject):
     finished = Signal(bool, str)
+
+
+class _UpdateWorkerSignals(QObject):
+    finished = Signal(object)
 
 
 class SettingsDialog(QDialog):
@@ -66,6 +74,9 @@ class SettingsDialog(QDialog):
 
         self.signals = _TestWorkerSignals()
         self.signals.finished.connect(self._on_test_finished)
+        self.update_signals = _UpdateWorkerSignals()
+        self.update_signals.finished.connect(self._on_update_result)
+        self.latest_update_info: Optional[UpdateInfo] = None
 
         self._init_ui()
         self._apply_dialog_style()
@@ -88,6 +99,10 @@ class SettingsDialog(QDialog):
         # 3. 界面与交互选项卡
         self.ui_tab = self._create_ui_tab()
         self.tab_widget.addTab(self.ui_tab, "外观与交互")
+
+        # 4. 软件更新与关于选项卡
+        self.about_tab = self._create_about_tab()
+        self.tab_widget.addTab(self.about_tab, "软件更新与关于")
 
         main_layout.addWidget(self.tab_widget)
 
@@ -443,6 +458,143 @@ class SettingsDialog(QDialog):
         return widget
 
     # ==============================
+    # 选项卡 4: 软件更新与关于
+    # ==============================
+    def _create_about_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(12)
+
+        # 顶部品牌横幅 (Logo + 名称 + 版本)
+        banner_layout = QHBoxLayout()
+        logo_label = QLabel(widget)
+        icon_path = find_icon_path()
+        if icon_path:
+            logo_pix = QPixmap(str(icon_path)).scaled(
+                52, 52, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
+            logo_label.setPixmap(logo_pix)
+        banner_layout.addWidget(logo_label)
+
+        title_layout = QVBoxLayout()
+        title_layout.setSpacing(2)
+        app_name_label = QLabel("言蹊翻译 (YanXi Trans)", widget)
+        app_name_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #1f2328;")
+        self.ver_label = QLabel(f"当前版本: v{yanxi.__version__} · 轻量桌面划词翻译工具", widget)
+        self.ver_label.setStyleSheet("font-size: 12px; color: #57606a;")
+        title_layout.addWidget(app_name_label)
+        title_layout.addWidget(self.ver_label)
+        banner_layout.addLayout(title_layout)
+        banner_layout.addStretch()
+        layout.addLayout(banner_layout)
+
+        # 在线版本更新分组框
+        self.update_group = QGroupBox("在线版本更新", widget)
+        up_layout = QVBoxLayout(self.update_group)
+        up_layout.setContentsMargins(12, 14, 12, 14)
+        up_layout.setSpacing(10)
+
+        # 状态指示与检查按钮
+        status_bar = QHBoxLayout()
+        self.update_status_label = QLabel("可点击右侧按钮检测 GitHub 最新发布版本", self.update_group)
+        self.update_status_label.setStyleSheet("font-size: 12px; color: #24292f;")
+        self.check_update_btn = QPushButton("🔍 检查更新", self.update_group)
+        self.check_update_btn.clicked.connect(self._check_update_async)
+        status_bar.addWidget(self.update_status_label)
+        status_bar.addStretch()
+        status_bar.addWidget(self.check_update_btn)
+        up_layout.addLayout(status_bar)
+
+        # 更新日志展示区
+        self.release_notes_edit = QTextEdit(self.update_group)
+        self.release_notes_edit.setReadOnly(True)
+        self.release_notes_edit.setPlaceholderText("检查更新后将在此处展示最新版本的更新说明与改进日志...")
+        self.release_notes_edit.setMaximumHeight(110)
+        self.release_notes_edit.setStyleSheet(
+            "background-color: #f6f8fa; border: 1px solid #d0d7de; font-size: 12px; color: #24292f;"
+        )
+        up_layout.addWidget(self.release_notes_edit)
+
+        # 前往下载按钮与自动检查选项
+        action_bar = QHBoxLayout()
+        self.auto_update_check = QCheckBox("启动应用时自动在后台检查更新", self.update_group)
+        self.auto_update_check.setChecked(self.working_config.update.auto_check_update)
+
+        self.download_btn = QPushButton("⚡ 前往下载最新版", self.update_group)
+        self.download_btn.setEnabled(False)
+        self.download_btn.clicked.connect(self._on_download_clicked)
+
+        action_bar.addWidget(self.auto_update_check)
+        action_bar.addStretch()
+        action_bar.addWidget(self.download_btn)
+        up_layout.addLayout(action_bar)
+
+        layout.addWidget(self.update_group)
+
+        # 开源与项目信息
+        about_group = QGroupBox("开源主页与协议", widget)
+        ab_layout = QVBoxLayout(about_group)
+        ab_layout.setContentsMargins(12, 12, 12, 12)
+        ab_layout.setSpacing(6)
+
+        repo_link = QLabel(
+            '<a href="https://github.com/Leonherben/yanxi-trans" style="color: #0969da; text-decoration: none;">'
+            '👉 GitHub 仓库: https://github.com/Leonherben/yanxi-trans</a>',
+            about_group,
+        )
+        repo_link.setOpenExternalLinks(True)
+        ab_layout.addWidget(repo_link)
+
+        desc_label = QLabel("名称取自“桃李不言，下自成蹊”。支持 Windows (x86_64) 与 Linux (X11)。采用 MIT 开源协议。", about_group)
+        desc_label.setStyleSheet("font-size: 12px; color: #57606a;")
+        ab_layout.addWidget(desc_label)
+
+        layout.addWidget(about_group)
+        layout.addStretch()
+        return widget
+
+    def _check_update_async(self) -> None:
+        """异步拉取 GitHub 最新版本发布信息"""
+        self.check_update_btn.setEnabled(False)
+        self.check_update_btn.setText("⏳ 正在检查...")
+        self.update_status_label.setText("正在连接 GitHub 获取最新版本信息...")
+
+        def _worker():
+            info = check_github_update()
+            self.update_signals.finished.emit(info)
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+    def _on_update_result(self, info: UpdateInfo) -> None:
+        """接收后台更新检测结果并渲染界面"""
+        self.check_update_btn.setEnabled(True)
+        self.check_update_btn.setText("🔍 检查更新")
+        self.latest_update_info = info
+
+        if info.error_message:
+            self.update_status_label.setText(f"❌ {info.error_message}")
+            self.download_btn.setEnabled(False)
+            return
+
+        if info.has_update:
+            self.update_status_label.setText(f"🎉 发现新版本: v{info.latest_version} (发布于 {info.published_at})")
+            self.release_notes_edit.setPlainText(info.release_notes)
+            self.download_btn.setEnabled(True)
+            self.download_btn.setText(f"⚡ 下载 v{info.latest_version}")
+        else:
+            self.update_status_label.setText(f"✅ 当前已是最新版本 (v{info.current_version})")
+            if info.release_notes:
+                self.release_notes_edit.setPlainText(f"当前最新版本说明:\n{info.release_notes}")
+            self.download_btn.setEnabled(False)
+
+    def _on_download_clicked(self) -> None:
+        """点击下载按钮在系统浏览器中打开更新包下载或 Release 页面"""
+        if self.latest_update_info:
+            open_release_page(self.latest_update_info)
+
+    # ==============================
     # 保存与样式
     # ==============================
     def _on_save_clicked(self) -> None:
@@ -466,17 +618,31 @@ class SettingsDialog(QDialog):
         ui.window_opacity = round(self.opacity_slider.value() / 100.0, 2)
         ui.auto_hide_seconds = self.auto_hide_spin.value()
 
+        # 收集更新配置
+        self.working_config.update.auto_check_update = self.auto_update_check.isChecked()
+
         # 写回原始 config 并保存到磁盘
         self.config.default_provider = self.working_config.default_provider
         self.config.providers = self.working_config.providers
         self.config.selection = self.working_config.selection
         self.config.ui = self.working_config.ui
+        self.config.update = self.working_config.update
         self.config.save()
 
         if self.on_save:
             self.on_save(self.config)
 
         self.accept()
+
+    def switch_to_tab(self, index: int) -> None:
+        """切换至指定选项卡 (0: 服务商, 1: 快捷键, 2: 外观, 3: 更新与关于)"""
+        if 0 <= index < self.tab_widget.count():
+            self.tab_widget.setCurrentIndex(index)
+
+    def trigger_check_update(self) -> None:
+        """从外部调用主动切换至更新选项卡并触发检查"""
+        self.switch_to_tab(3)
+        self._check_update_async()
 
     def _apply_dialog_style(self) -> None:
         self.setStyleSheet("""

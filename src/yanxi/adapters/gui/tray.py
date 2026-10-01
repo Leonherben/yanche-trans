@@ -29,6 +29,7 @@ class 言蹊翻译Tray(QSystemTrayIcon):
         on_toggle_auto_popup: Optional[Callable[[bool], None]] = None,
         on_clear_cache: Optional[Callable[[], None]] = None,
         on_open_settings: Optional[Callable[[], None]] = None,
+        on_check_update: Optional[Callable[[], None]] = None,
         on_quit: Optional[Callable[[], None]] = None,
     ) -> None:
         icon = self._create_vector_icon()
@@ -43,6 +44,7 @@ class 言蹊翻译Tray(QSystemTrayIcon):
         self.on_toggle_auto_popup = on_toggle_auto_popup
         self.on_clear_cache = on_clear_cache
         self.on_open_settings = on_open_settings
+        self.on_check_update = on_check_update
         self.on_quit = on_quit
 
         self._listener_enabled = True
@@ -154,6 +156,12 @@ class 言蹊翻译Tray(QSystemTrayIcon):
             settings_act = QAction("⚙ 偏好设置...", menu)
             settings_act.triggered.connect(self.on_open_settings)
             menu.addAction(settings_act)
+
+        # 检查更新
+        if self.on_check_update:
+            update_act = QAction("🔄 检查更新...", menu)
+            update_act.triggered.connect(self.on_check_update)
+            menu.addAction(update_act)
 
         # 6. 清理本地缓存
         clear_cache_act = QAction("清空缓存", menu)

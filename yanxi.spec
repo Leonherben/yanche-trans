@@ -42,6 +42,7 @@ hiddenimports = [
     "yanxi.core.models",
     "yanxi.core.cache.sqlite_cache",
     "yanxi.core.single_instance",
+    "yanxi.core.updater",
     "yanxi.core.translator.factory",
     "yanxi.core.translator.base",
     "yanxi.core.translator.openai_compatible",
