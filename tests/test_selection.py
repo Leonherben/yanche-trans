@@ -174,6 +174,29 @@ def test_hotkey_selection_listener_trigger(mocker):
     assert callbacks[0] == ("instant selected text", (250, 350))
 
 
+def test_hotkey_selection_listener_no_selection_trigger(mocker):
+    from pynput import mouse
+    import pyperclip
+    from yanche.adapters.selection.hotkey_fallback import HotkeySelectionListener
+
+    callbacks = []
+    no_sel_called = []
+    listener = HotkeySelectionListener(
+        callback=lambda text, pos: callbacks.append((text, pos)),
+        hotkey_str="<alt>+d",
+        get_x11_selection_fn=lambda: "",
+        on_no_selection=lambda: no_sel_called.append(True),
+    )
+
+    mocker.patch.object(mouse.Controller, "position", new_callable=mocker.PropertyMock, return_value=(250, 350))
+    mocker.patch.object(pyperclip, "paste", return_value="")
+    listener._trigger_capture()
+
+    assert len(callbacks) == 0
+    assert len(no_sel_called) == 1
+
+
+
 def test_hotkey_helpers_normalize_and_display():
     from yanche.adapters.selection.hotkey_fallback import (
         normalize_to_pynput,

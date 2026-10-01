@@ -210,11 +210,16 @@ _DARK_STYLESHEET = """
         border: 1px solid #21262d;
         border-radius: 8px;
     }
-    QLabel#original_text {
+    QLabel#original_text, QPlainTextEdit#original_text {
         color: #8b949e;
         font-size: 12px;
         line-height: 1.4;
         background: transparent;
+        border: none;
+    }
+    QPlainTextEdit#original_text:focus {
+        border: none;
+        outline: none;
     }
     QPushButton#subtle_btn {
         background: transparent;
@@ -341,11 +346,16 @@ _LIGHT_STYLESHEET = """
         border: 1px solid #e1e4e8;
         border-radius: 8px;
     }
-    QLabel#original_text {
+    QLabel#original_text, QPlainTextEdit#original_text {
         color: #57606a;
         font-size: 12px;
         line-height: 1.4;
         background: transparent;
+        border: none;
+    }
+    QPlainTextEdit#original_text:focus {
+        border: none;
+        outline: none;
     }
     QPushButton#subtle_btn {
         background: transparent;
@@ -472,11 +482,16 @@ _GLASS_STYLESHEET = """
         border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 8px;
     }
-    QLabel#original_text {
+    QLabel#original_text, QPlainTextEdit#original_text {
         color: #c9d1d9;
         font-size: 12px;
         line-height: 1.4;
         background: transparent;
+        border: none;
+    }
+    QPlainTextEdit#original_text:focus {
+        border: none;
+        outline: none;
     }
     QPushButton#subtle_btn {
         background: transparent;

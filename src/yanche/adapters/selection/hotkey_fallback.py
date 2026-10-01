@@ -109,11 +109,13 @@ class HotkeySelectionListener(BaseSelectionListener):
         max_length: int = 3000,
         on_empty_click: Optional[Callable[[Tuple[int, int]], None]] = None,
         get_x11_selection_fn: Optional[Callable[[], str]] = None,
+        on_no_selection: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(callback, min_length, max_length, on_empty_click=on_empty_click)
         self.hotkey_str = hotkey_str
         self.extra_hotkeys = extra_hotkeys or []
         self.get_x11_selection_fn = get_x11_selection_fn
+        self.on_no_selection = on_no_selection
         self._keyboard_controller = keyboard.Controller()
         self._mouse_controller = mouse.Controller()
         self._hotkey_listener: Optional[keyboard.GlobalHotKeys] = None
@@ -176,6 +178,8 @@ class HotkeySelectionListener(BaseSelectionListener):
         sanitized = self.sanitize_text(new_text)
         if sanitized:
             self.callback(sanitized, (int(mx), int(my)))
+        elif self.on_no_selection:
+            self.on_no_selection()
 
     def _on_hotkey_activated(self) -> None:
         threading.Thread(target=self._trigger_capture, daemon=True).start()

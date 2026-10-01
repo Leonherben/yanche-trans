@@ -395,5 +395,87 @@ def test_key_recorder_edit_and_qt_keys(qapp):
     assert edit.text() == "Alt + Q"
 
 
+def test_popup_manual_input_and_editing(qapp):
+    retranslated = []
+    config = UIConfig()
+    popup = PopupBubble(config, on_retranslate=lambda text: retranslated.append(text))
+
+    assert hasattr(popup, "original_edit")
+    assert hasattr(popup, "clear_orig_btn")
+    assert hasattr(popup, "translate_btn")
+
+    # 1. 模拟设置原文并显示
+    popup.show()
+    popup.original_label.setText("Hello World")
+    assert popup.original_label.text() == "Hello World"
+    assert popup.original_edit.toPlainText() == "Hello World"
+
+    # 2. 模拟用户输入文本，按钮显示
+    popup.original_edit.setPlainText("New manual text")
+    popup._on_original_text_changed()
+    assert popup.clear_orig_btn.isVisible()
+    assert popup.translate_btn.isVisible()
+
+    # 3. 模拟按键回车即时翻译
+    popup._on_manual_translate_requested()
+    assert len(retranslated) == 1
+    assert retranslated[0] == "New manual text"
+
+    # 4. 模拟清空按钮
+    popup._clear_input()
+    assert popup.original_edit.toPlainText() == ""
+    assert popup.original_label.text() == ""
+    assert not popup.clear_orig_btn.isVisible()
+    assert not popup.translate_btn.isVisible()
+
+    # 5. 测试 open_for_input 唤醒
+    popup.open_for_input()
+    qapp.processEvents()
+    assert popup.isVisible()
+    assert popup.original_edit.hasFocus()
+
+    popup.close()
+
+
+def test_original_text_edit_keys(qapp):
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QWidget
+    from yanche.adapters.gui.popup import OriginalTextEdit
+
+    w = QWidget()
+    edit = OriginalTextEdit(w)
+    w.show()
+    edit.setFocus()
+    qapp.processEvents()
+
+    triggered = []
+    edit.return_pressed.connect(lambda: triggered.append(True))
+
+    # 1. Shift + Enter 换行，不触发 return_pressed
+    ev_shift_enter = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    edit.keyPressEvent(ev_shift_enter)
+    assert len(triggered) == 0
+
+    # 2. Enter 触发 return_pressed
+    ev_enter = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    edit.keyPressEvent(ev_enter)
+    assert len(triggered) == 1
+
+    # 3. Ctrl + Enter 触发 return_pressed
+    ev_ctrl_enter = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    edit.keyPressEvent(ev_ctrl_enter)
+    assert len(triggered) == 2
+
+    # 4. Escape 隐藏父窗口
+    ev_esc = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier)
+    edit.keyPressEvent(ev_esc)
+    assert not w.isVisible()
+
+    w.close()
+
+
+
+
 
 

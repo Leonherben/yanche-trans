@@ -23,7 +23,7 @@ import atexit
 import signal
 import threading
 from typing import Optional, Tuple
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QTimer
 from PySide6.QtWidgets import QApplication
 from pynput import keyboard
 
@@ -55,6 +55,7 @@ class 言澈翻译App(QObject):
         self.popup = PopupBubble(
             config=self.config.ui,
             selection_config=self.config.selection,
+            on_retranslate=self.retranslate_text,
             on_switch_provider=self.switch_provider_and_retranslate,
             on_save_config=self.config.save,
             on_clear_cache=self.cache.clear,
@@ -64,6 +65,7 @@ class 言澈翻译App(QObject):
         self.popup.closed.connect(self._on_popup_closed)
         self.tray = 言澈翻译Tray(
             config=self.config,
+            on_open_input=lambda: QTimer.singleShot(0, self.popup.open_for_input),
             on_toggle_listener=self.set_listener_enabled,
             on_provider_change=self.set_provider,
             on_target_lang_change=self.set_target_lang,
@@ -134,6 +136,7 @@ class 言澈翻译App(QObject):
                 max_length=self.config.selection.max_length,
                 on_empty_click=self.on_empty_click,
                 get_x11_selection_fn=x11_listener.get_current_selection if x11_listener else None,
+                on_no_selection=lambda: QTimer.singleShot(0, self.popup.open_for_input),
             )
             self.listeners.append(hotkey_listener)
 
@@ -202,6 +205,13 @@ class 言澈翻译App(QObject):
         self.active_provider_cfg = self.config.get_active_provider()
         self.translator = create_translator(self.active_provider_cfg)
         self.tray.update_active_provider(provider_name)
+
+    def retranslate_text(self, text: str) -> None:
+        """从浮窗手动编辑或即时查词触发就地重新翻译"""
+        if not text:
+            return
+        self.popup.display_loading(text, self.popup.x(), self.popup.y())
+        threading.Thread(target=self._async_translate_pipeline, args=(text,), daemon=True).start()
 
     def switch_provider_and_retranslate(self, provider_name: str, text: str) -> None:
         """从浮窗直接切换模型并就地重新翻译"""

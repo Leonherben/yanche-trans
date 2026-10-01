@@ -8,7 +8,7 @@
 from __future__ import annotations
 from typing import Optional, Callable, List
 from PySide6.QtCore import Qt, QPoint, QTimer, Signal, QEvent, QRect
-from PySide6.QtGui import QCursor, QGuiApplication, QKeyEvent
+from PySide6.QtGui import QCursor, QGuiApplication, QKeyEvent, QTextCursor
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizeGrip,
@@ -525,6 +526,51 @@ class HotkeySettingsDialog(QDialog):
 
 
 
+class OriginalTextEdit(QPlainTextEdit):
+    """支持手动编辑、复制粘贴、回车即时翻译与接口向下兼容的原文输入框"""
+    return_pressed = Signal()
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("original_text")
+        self.setPlaceholderText("输入或粘贴需要翻译的文本 (回车翻译，Shift+回车换行)...")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+    def text(self) -> str:
+        """保持与 QLabel.text() 100% 接口兼容"""
+        return self.toPlainText()
+
+    def setText(self, text: str) -> None:
+        """供系统注入文本（如划词或重译），静默更新且光标移至末尾"""
+        self.blockSignals(True)
+        self.setPlainText(text)
+        self.moveCursor(QTextCursor.MoveOperation.End)
+        self.blockSignals(False)
+
+    def setWordWrap(self, wrap: bool) -> None:
+        pass  # 兼容空实现
+
+    def setTextInteractionFlags(self, flags) -> None:
+        pass  # 兼容空实现
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Escape:
+            if self.window():
+                self.window().hide()
+            event.accept()
+            return
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                super().keyPressEvent(event)
+                return
+            self.return_pressed.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class PopupBubble(QWidget):
     """防焦点窃取的高颜值多功能悬浮翻译气泡窗口"""
 
@@ -573,12 +619,11 @@ class PopupBubble(QWidget):
         else:
             self._fixed_pos = None
 
-        # 核心防焦点夺取窗口标志：采用 Tool 属性常驻，避免被系统 WM 作为 ToolTip 隐式强退
+        # 核心窗口标志：Tool 属性常驻，无边框置顶，支持按需输入交互
         self.setWindowFlags(
             Qt.WindowType.Tool
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.WindowDoesNotAcceptFocus
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -594,6 +639,11 @@ class PopupBubble(QWidget):
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self._save_current_config)
+
+        # 手动输入防抖翻译定时器 (600ms)
+        self._input_debounce_timer = QTimer(self)
+        self._input_debounce_timer.setSingleShot(True)
+        self._input_debounce_timer.timeout.connect(self._on_manual_translate_requested)
 
         # 自动收起定时器
         self.auto_hide_timer = QTimer(self)
@@ -699,27 +749,40 @@ class PopupBubble(QWidget):
         orig_layout.setContentsMargins(10, 8, 10, 8)
         orig_layout.setSpacing(6)
 
-        # 原文预览区（内嵌平滑滚动）
-        orig_scroll = QScrollArea(self)
-        orig_scroll.setWidgetResizable(True)
-        orig_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        orig_scroll.setStyleSheet("background: transparent; border: none;")
+        # 原文编辑/预览区
+        self.original_edit = OriginalTextEdit(self)
+        self.original_label = self.original_edit  # 保持属性兼容
+        self.original_edit.return_pressed.connect(self._on_manual_translate_requested)
+        self.original_edit.textChanged.connect(self._on_original_text_changed)
+        orig_layout.addWidget(self.original_edit, stretch=1)
 
-        self.original_label = QLabel(self)
-        self.original_label.setObjectName("original_text")
-        self.original_label.setWordWrap(True)
-        self.original_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        orig_scroll.setWidget(self.original_label)
-        orig_layout.addWidget(orig_scroll, stretch=1)
-
-        # 原文卡片底栏：复制原文
+        # 原文卡片底栏：清空、即时翻译、复制原文
         orig_bottom = QHBoxLayout()
         orig_bottom.setContentsMargins(0, 0, 0, 0)
+        orig_bottom.setSpacing(6)
         self.orig_meta_label = QLabel("", self)
         self.orig_meta_label.hide()
         orig_bottom.addWidget(self.orig_meta_label)
 
         orig_bottom.addStretch()
+
+        self.clear_orig_btn = QPushButton("清空", self)
+        self.clear_orig_btn.setObjectName("subtle_btn")
+        self.clear_orig_btn.setToolTip("清空输入内容")
+        self.clear_orig_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.clear_orig_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_orig_btn.clicked.connect(self._clear_input)
+        self.clear_orig_btn.hide()
+        orig_bottom.addWidget(self.clear_orig_btn)
+
+        self.translate_btn = QPushButton("翻译", self)
+        self.translate_btn.setObjectName("subtle_btn")
+        self.translate_btn.setToolTip("立即翻译 (回车)")
+        self.translate_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.translate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.translate_btn.clicked.connect(self._on_manual_translate_requested)
+        self.translate_btn.hide()
+        orig_bottom.addWidget(self.translate_btn)
 
         self.copy_orig_btn = QPushButton("复制", self)
         self.copy_orig_btn.setObjectName("subtle_btn")
@@ -996,7 +1059,7 @@ class PopupBubble(QWidget):
         return f"{chars} 字符"
 
     def _copy_original(self) -> None:
-        text = self._last_requested_text or (
+        text = self.original_edit.toPlainText().strip() or self._last_requested_text or (
             self._current_result.original_text if self._current_result else ""
         )
         if text:
@@ -1007,6 +1070,77 @@ class PopupBubble(QWidget):
         if self._current_result and self._current_result.is_success():
             pyperclip.copy(self._current_result.translated_text)
             self._flash_status("已复制译文")
+
+    def _on_original_text_changed(self) -> None:
+        """用户在输入框手动修改或粘贴文本时的响应"""
+        text = self.original_edit.toPlainText().strip()
+        has_text = bool(text)
+        self.clear_orig_btn.setVisible(has_text)
+        self.translate_btn.setVisible(has_text)
+
+        if text:
+            if text != self._last_requested_text:
+                self._input_debounce_timer.start(600)
+        else:
+            self._input_debounce_timer.stop()
+            self.text_browser.clear()
+            self.latency_label.setText("")
+            self.status_msg.setText("")
+
+    def _on_manual_translate_requested(self) -> None:
+        """用户敲击回车或点击'翻译'按钮或输入防抖结束时触发翻译"""
+        self._input_debounce_timer.stop()
+        text = self.original_edit.toPlainText().strip()
+        if not text:
+            return
+        self._last_requested_text = text
+        if self.on_retranslate:
+            self.on_retranslate(text)
+        elif self.on_switch_provider:
+            self.on_switch_provider(self._current_provider, text)
+
+    def _clear_input(self) -> None:
+        """一键清空输入框与结果"""
+        self._input_debounce_timer.stop()
+        self.original_edit.clear()
+        self.text_browser.clear()
+        self.status_msg.setText("")
+        self.latency_label.setText("")
+        self._last_requested_text = ""
+        self._current_result = None
+        self.clear_orig_btn.hide()
+        self.translate_btn.hide()
+        self.original_edit.setFocus()
+
+    def open_for_input(self) -> None:
+        """主动打开浮窗，聚焦于原文输入框，供用户手动键入或复制粘贴查词"""
+        self._input_debounce_timer.stop()
+        self.original_edit.clear()
+        self.text_browser.clear()
+        self.status_msg.setText("")
+        self.latency_label.setText("")
+        self._last_requested_text = ""
+        self._current_result = None
+        self.clear_orig_btn.hide()
+        self.translate_btn.hide()
+
+        if self._is_pinned and self._fixed_pos is not None:
+            self.move(self._fixed_pos)
+        elif self._is_pinned and getattr(self.config, "fixed_x", None) is not None:
+            self._fixed_pos = QPoint(self.config.fixed_x, self.config.fixed_y)
+            self.move(self._fixed_pos)
+        else:
+            screen = QGuiApplication.primaryScreen()
+            if screen:
+                geo = screen.availableGeometry()
+                cx = geo.x() + (geo.width() - self.width()) // 2
+                cy = geo.y() + (geo.height() - self.height()) // 2
+                self.move(cx, cy)
+
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.original_edit.setFocus()
 
     def _show_more_menu(self) -> None:
         """弹出更多选项设置菜单 (集成无级透明度滑动条、主题、模式B、快捷键)"""
@@ -1179,6 +1313,9 @@ class PopupBubble(QWidget):
         elif self._is_pinned and getattr(self.config, "fixed_x", None) is not None:
             self._fixed_pos = QPoint(self.config.fixed_x, self.config.fixed_y)
             self.move(self._fixed_pos)
+        elif self.isVisible() and (cursor_x, cursor_y) == (self.x(), self.y()):
+            # 手动编辑输入或就地重译时保持当前位置不变
+            pass
         else:
             self.adjust_position(cursor_x, cursor_y)
             if self._is_pinned:
@@ -1187,6 +1324,10 @@ class PopupBubble(QWidget):
                 self.config.fixed_x = self.pos().x()
                 self.config.fixed_y = self.pos().y()
                 self._save_current_config()
+
+        has_text = bool(text.strip())
+        self.clear_orig_btn.setVisible(has_text)
+        self.translate_btn.setVisible(has_text)
 
         self.show()
 
@@ -1205,6 +1346,10 @@ class PopupBubble(QWidget):
 
         self.original_label.setText(result.original_text)
         self.orig_meta_label.setText(self._format_meta(result.original_text))
+
+        has_text = bool(result.original_text.strip())
+        self.clear_orig_btn.setVisible(has_text)
+        self.translate_btn.setVisible(has_text)
 
         if not result.is_success():
             html_err = result.translated_text.replace("\n", "<br>")

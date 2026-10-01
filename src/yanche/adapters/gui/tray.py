@@ -19,6 +19,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
         self,
         config: AppConfig,
         parent: Optional[QWidget] = None,
+        on_open_input: Optional[Callable[[], None]] = None,
         on_toggle_listener: Optional[Callable[[bool], None]] = None,
         on_provider_change: Optional[Callable[[str], None]] = None,
         on_target_lang_change: Optional[Callable[[str], None]] = None,
@@ -31,6 +32,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
         icon = self._create_vector_icon()
         super().__init__(icon, parent)
         self.config = config
+        self.on_open_input = on_open_input
         self.on_toggle_listener = on_toggle_listener
         self.on_provider_change = on_provider_change
         self.on_target_lang_change = on_target_lang_change
@@ -48,10 +50,17 @@ class 言澈翻译Tray(QSystemTrayIcon):
         self.activated.connect(self._on_tray_activated)
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        """支持鼠标左键单击、双击或右键均能立即在光标位置弹出托盘菜单"""
+        """支持鼠标左键双击打开查词窗口，单击或右键弹出菜单"""
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self._handle_open_input()
+            return
         menu = self.contextMenu()
         if menu:
             menu.popup(QCursor.pos())
+
+    def _handle_open_input(self) -> None:
+        if self.on_open_input:
+            self.on_open_input()
 
     def _create_vector_icon(self) -> QIcon:
         """程序化绘制优雅的暗青色托盘图标，避免对外部 PNG 文件的依赖"""
@@ -77,6 +86,13 @@ class 言澈翻译Tray(QSystemTrayIcon):
 
     def _build_menu(self) -> None:
         menu = QMenu()
+
+        # 0. 主动输入查词
+        input_action = QAction("输入查词...", menu)
+        input_action.triggered.connect(self._handle_open_input)
+        menu.addAction(input_action)
+
+        menu.addSeparator()
 
         # 1. 状态开关与划选翻译
         self.toggle_action = QAction("取词服务: 开启", menu)
