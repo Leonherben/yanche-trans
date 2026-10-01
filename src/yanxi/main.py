@@ -38,6 +38,7 @@ from yanxi.core.single_instance import SingleInstance
 from yanxi.adapters.gui.popup import PopupBubble
 from yanxi.adapters.gui.tray import 言蹊翻译Tray
 from yanxi.adapters.gui.settings_dialog import SettingsDialog
+from yanxi.adapters.gui.icon_helper import get_app_icon
 from yanxi.adapters.selection.base import BaseSelectionListener
 from yanxi.adapters.selection.linux_x11 import LinuxX11SelectionListener
 from yanxi.adapters.selection.hotkey_fallback import HotkeySelectionListener
@@ -324,6 +325,7 @@ def main() -> None:
     # 强制无头或者有桌面环境支持
     app = QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # 保持后台常驻
+    app.setWindowIcon(get_app_icon())
     configure_system_font(app)
 
     # 跨平台单实例保护：检测是否已有多开

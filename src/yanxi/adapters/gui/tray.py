@@ -10,6 +10,7 @@ from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QFont, QIcon, 
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 from yanxi.core.config import AppConfig
 from yanxi.adapters.gui.theme import AVAILABLE_THEMES, AVAILABLE_OPACITIES
+from yanxi.adapters.gui.icon_helper import get_tray_icon
 
 
 class 言蹊翻译Tray(QSystemTrayIcon):
@@ -65,26 +66,8 @@ class 言蹊翻译Tray(QSystemTrayIcon):
             self.on_open_input()
 
     def _create_vector_icon(self) -> QIcon:
-        """程序化绘制优雅的暗青色托盘图标，避免对外部 PNG 文件的依赖"""
-        pixmap = QPixmap(64, 64)
-        pixmap.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        # 绘制圆角背景
-        painter.setBrush(QColor("#1f6feb"))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(4, 4, 56, 56, 14, 14)
-
-        # 绘制字母 "译" 或 "T"
-        painter.setPen(QColor("#ffffff"))
-        font = QFont("Sans-Serif", 28, QFont.Weight.Bold)
-        painter.setFont(font)
-        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "译")
-        painter.end()
-
-        return QIcon(pixmap)
+        """获取应用托盘图标（优先加载高精度 PNG，缺失时自动回退矢量渲染）"""
+        return get_tray_icon()
 
     def _build_menu(self) -> None:
         menu = QMenu()

@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from yanxi.core.config import AppConfig, ProviderConfig
 from yanxi.core.translator.factory import create_translator
 from yanxi.adapters.gui.theme import AVAILABLE_THEMES
+from yanxi.adapters.gui.icon_helper import get_app_icon
 
 
 class _TestWorkerSignals(QObject):
@@ -50,6 +51,7 @@ class SettingsDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("言蹊翻译 - 偏好设置")
+        self.setWindowIcon(get_app_icon())
         self.resize(520, 560)
         self.setMinimumSize(460, 480)
 
