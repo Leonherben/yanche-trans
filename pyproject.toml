@@ -17,10 +17,10 @@ dependencies = [
 ]
 
 [project.scripts]
+yanxi = "yanche:main"
+yanxi-cli = "yanche.cli.main:main"
 yanche = "yanche:main"
 yanche-cli = "yanche.cli.main:main"
-yanqi = "yanche:main"
-yanqi-cli = "yanche.cli.main:main"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.13.0"]

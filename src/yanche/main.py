@@ -244,9 +244,9 @@ class 言蹊翻译App(QObject):
         self.qapp.quit()
 
 
-言澈翻译App = 言蹊翻译App
-YanQiApp = 言蹊翻译App
+YanXiApp = 言蹊翻译App
 YanCheApp = 言蹊翻译App
+言澈翻译App = 言蹊翻译App
 
 
 def main() -> None:
