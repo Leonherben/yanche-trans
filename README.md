@@ -27,9 +27,15 @@
 
 本项目严格采用现代工具链 `uv` 纳管虚拟环境。
 
-### 1. 安装依赖与环境构建
+### 0. 系统级前置依赖 (Linux 专属)
+Linux 桌面环境原生划词取词与 Qt6 XCB 底层依赖以下支持包：
 ```bash
-# 自动创建 .venv 并安装所有依赖
+sudo apt update && sudo apt install -y xsel libxcb-cursor0
+```
+
+### 1. 安装项目依赖与环境构建
+```bash
+# 自动创建 .venv 并安装所有 Python 依赖
 uv sync
 ```
 
