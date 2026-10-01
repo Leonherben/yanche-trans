@@ -6,7 +6,7 @@
 from __future__ import annotations
 from typing import Optional, Callable
 from PySide6.QtCore import Qt, QPoint, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QBrush, QPen
+from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QBrush, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -39,9 +39,9 @@ class PopupBubble(QWidget):
         self._is_pinned = False
         self._current_result: Optional[TranslationResult] = None
 
-        # 核心防焦点夺取窗口标志
+        # 核心防焦点夺取窗口标志：采用 Tool 属性常驻，避免被系统 WM 作为 ToolTip 隐式强退
         self.setWindowFlags(
-            Qt.WindowType.ToolTip
+            Qt.WindowType.Tool
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.WindowDoesNotAcceptFocus
@@ -169,15 +169,23 @@ class PopupBubble(QWidget):
 
     def _toggle_pin(self) -> None:
         self._is_pinned = not self._is_pinned
-        self.pin_btn.setStyleSheet(
-            "background: rgba(88, 166, 255, 0.2); border: none; font-size: 11px; border-radius: 3px;"
-            if self._is_pinned
-            else "background: transparent; border: none; font-size: 11px;"
-        )
         if self._is_pinned:
+            self.pin_btn.setText("📍")
+            self.pin_btn.setToolTip("浮窗已固定（不会自动收起，点击取消固定）")
+            self.pin_btn.setStyleSheet(
+                "background-color: #1f6feb; color: #ffffff; border-radius: 4px; font-size: 11px; padding: 1px;"
+            )
             self.auto_hide_timer.stop()
-        elif self.config.auto_hide_seconds > 0:
-            self.auto_hide_timer.start(self.config.auto_hide_seconds * 1000)
+            self.status_msg.setText("📌 浮窗已固定")
+            QTimer.singleShot(1500, lambda: self.status_msg.setText(""))
+        else:
+            self.pin_btn.setText("📌")
+            self.pin_btn.setToolTip("固定浮窗")
+            self.pin_btn.setStyleSheet("background: transparent; border: none; font-size: 11px;")
+            if self.config.auto_hide_seconds > 0:
+                self.auto_hide_timer.start(self.config.auto_hide_seconds * 1000)
+            self.status_msg.setText("浮窗已取消固定")
+            QTimer.singleShot(1500, lambda: self.status_msg.setText(""))
 
     def _copy_result(self) -> None:
         if self._current_result and self._current_result.is_success():
@@ -186,7 +194,9 @@ class PopupBubble(QWidget):
             QTimer.singleShot(1500, lambda: self.status_msg.setText(""))
 
     def _on_auto_hide(self) -> None:
-        if not self._is_pinned and not self.underMouse():
+        if self._is_pinned:
+            return
+        if not self.underMouse():
             self.hide()
 
     def display_loading(self, text: str, cursor_x: int, cursor_y: int) -> None:
@@ -225,43 +235,49 @@ class PopupBubble(QWidget):
         self.adjustSize()
         self.show()
 
-        if not self._is_pinned and self.config.auto_hide_seconds > 0:
+        if self._is_pinned:
+            self.auto_hide_timer.stop()
+        elif self.config.auto_hide_seconds > 0:
             self.auto_hide_timer.start(self.config.auto_hide_seconds * 1000)
 
-    def dismiss_if_outside(self, cursor_x: int, cursor_y: int) -> None:
+    def dismiss_if_outside(self, cursor_x: int = 0, cursor_y: int = 0) -> None:
         """如果浮窗正处于显示状态且未钉住，当点击落在浮窗几何区域外部时平滑收起"""
-        if self.isVisible() and not self._is_pinned:
-            if not self.frameGeometry().contains(QPoint(cursor_x, cursor_y)):
-                self.hide()
+        if not self.isVisible() or self._is_pinned:
+            return
+
+        # 使用 Qt 原生逻辑光标坐标，天然消除 Surface 2.0x 高分屏 DPI 缩放影响
+        mouse_pos = QCursor.pos()
+        if not self.frameGeometry().contains(mouse_pos):
+            self.hide()
 
     def hideEvent(self, event) -> None:
         self.closed.emit()
         super().hideEvent(event)
 
-    def adjust_position(self, cursor_x: int, cursor_y: int) -> None:
+    def adjust_position(self, cursor_x: int = 0, cursor_y: int = 0) -> None:
         """根据当前鼠标位置和多屏幕边界进行智能边缘检测避让"""
-        screen = QGuiApplication.screenAt(QPoint(cursor_x, cursor_y)) or QGuiApplication.primaryScreen()
+        pos = QCursor.pos()
+        target_x = pos.x() + 15
+        target_y = pos.y() + 15
+
+        screen = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
         if not screen:
-            self.move(cursor_x + 15, cursor_y + 15)
+            self.move(target_x, target_y)
             return
 
         geom = screen.availableGeometry()
         w = max(self.width(), 320)
         h = max(self.height(), 160)
 
-        # 优先在光标右下方偏移 15px
-        target_x = cursor_x + 15
-        target_y = cursor_y + 15
-
         # 靠右溢出翻转
         if target_x + w > geom.right():
-            target_x = cursor_x - w - 10
+            target_x = pos.x() - w - 10
             if target_x < geom.left():
                 target_x = geom.left() + 10
 
         # 靠下溢出翻转
         if target_y + h > geom.bottom():
-            target_y = cursor_y - h - 10
+            target_y = pos.y() - h - 10
             if target_y < geom.top():
                 target_y = geom.top() + 10
 

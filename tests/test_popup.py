@@ -67,21 +67,30 @@ def test_popup_display_error(qapp):
 
 
 def test_popup_dismiss_if_outside(qapp):
+    from PySide6.QtGui import QCursor
     config = UIConfig()
     popup = PopupBubble(config)
     popup.resize(320, 150)
     popup.move(100, 100)
     popup.show()
 
-    # 1. 点击窗口外部 (500, 500)，未钉住状态下应自动收起
-    popup.dismiss_if_outside(500, 500)
+    # 1. 鼠标位于窗口外部 (500, 500)，未钉住状态下应自动收起
+    QCursor.setPos(500, 500)
+    popup.dismiss_if_outside()
     assert not popup.isVisible()
 
     # 2. 重新显示并钉住 (pin)
     popup.show()
     popup._is_pinned = True
-    popup.dismiss_if_outside(500, 500)
+    QCursor.setPos(500, 500)
+    popup.dismiss_if_outside()
     # 钉住状态下即便点击外部也不收起
+    assert popup.isVisible()
+
+    # 3. 鼠标位于窗口内部 (150, 150)，未钉住状态下也不收起
+    popup._is_pinned = False
+    QCursor.setPos(150, 150)
+    popup.dismiss_if_outside()
     assert popup.isVisible()
 
     popup.close()
