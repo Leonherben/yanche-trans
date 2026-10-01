@@ -2,7 +2,7 @@
 
 严格遵循 agent.md 防焦点窃取规范，确保窗口弹出时绝不中断用户的键盘打字与原窗口活动状态。
 支持四角与四边无级自由缩放、QSplitter 原文/译文高度比例调节、一键切换“只显示译文”、
-多主题切换（Dark/Light/Glass/Auto跟随系统）以及自定义透明度调节。
+多主题切换（Dark/Light/Glass/Auto跟随系统）、无级百分比透明度滑动条 (40%~100%) 以及多快捷键/侧键触发。
 """
 
 from __future__ import annotations
@@ -11,24 +11,27 @@ from PySide6.QtCore import Qt, QPoint, QTimer, Signal, QEvent, QRect
 from PySide6.QtGui import QCursor, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMenu,
     QPushButton,
     QScrollArea,
     QSizeGrip,
+    QSlider,
     QSplitter,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 import pyperclip
-from yanche.core.config import UIConfig
+from yanche.core.config import UIConfig, SelectionConfig
 from yanche.core.models import TranslationResult
 from yanche.adapters.gui.theme import (
     AVAILABLE_THEMES,
-    AVAILABLE_OPACITIES,
     get_effective_theme,
     get_theme_stylesheet,
     get_theme_menu_style,
@@ -48,8 +51,113 @@ CURSOR_MAP = {
 }
 
 
+class HotkeySettingsDialog(QDialog):
+    """快捷键与触发方式设置对话框"""
+
+    def __init__(
+        self,
+        selection_config: SelectionConfig,
+        on_save: Optional[Callable[[], None]] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.selection_config = selection_config
+        self.on_save = on_save
+        self.setWindowTitle("⌨️ 快捷键设置")
+        self.setFixedSize(360, 200)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+        self._init_ui()
+
+    def _init_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(12)
+
+        lbl = QLabel("全局翻译热键 (选词后按下触发):", self)
+        lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(lbl)
+
+        self.input_hotkey = QLineEdit(self.selection_config.hotkey, self)
+        self.input_hotkey.setPlaceholderText("<alt>+d")
+        self.input_hotkey.setStyleSheet("""
+            QLineEdit {
+                background: #161b22;
+                color: #e6edf3;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                padding: 6px 10px;
+                font-family: monospace;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #58a6ff;
+            }
+        """)
+        layout.addWidget(self.input_hotkey)
+
+        # 推荐预设按钮
+        preset_bar = QHBoxLayout()
+        preset_bar.setSpacing(6)
+        presets = [("Alt + D (推荐)", "<alt>+d"), ("Ctrl+Alt+T", "<ctrl>+<alt>+t"), ("Alt + Q", "<alt>+q")]
+        for title, keycode in presets:
+            btn = QPushButton(title, self)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: #21262d;
+                    color: #c9d1d9;
+                    border: 1px solid #30363d;
+                    border-radius: 4px;
+                    padding: 3px 8px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background: #30363d;
+                    color: #58a6ff;
+                }
+            """)
+            btn.clicked.connect(lambda checked, k=keycode: self.input_hotkey.setText(k))
+            preset_bar.addWidget(btn)
+        layout.addLayout(preset_bar)
+
+        layout.addStretch()
+
+        # 按钮栏
+        btn_box = QHBoxLayout()
+        btn_box.addStretch()
+
+        cancel_btn = QPushButton("取消", self)
+        cancel_btn.clicked.connect(self.reject)
+        btn_box.addWidget(cancel_btn)
+
+        save_btn = QPushButton("保存生效", self)
+        save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1f6feb;
+                color: #ffffff;
+                border-radius: 4px;
+                padding: 4px 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #388bfd;
+            }
+        """)
+        save_btn.clicked.connect(self._save_and_apply)
+        btn_box.addWidget(save_btn)
+
+        layout.addLayout(btn_box)
+
+    def _save_and_apply(self) -> None:
+        val = self.input_hotkey.text().strip()
+        if val:
+            self.selection_config.hotkey = val
+            if self.on_save:
+                self.on_save()
+        self.accept()
+
+
 class PopupBubble(QWidget):
-    """防焦点窃取的高颜值多主题悬浮翻译气泡窗口"""
+    """防焦点窃取的高颜值多功能悬浮翻译气泡窗口"""
 
     # 异步触发信号（线程安全）
     show_translation_signal = Signal(object)
@@ -60,18 +168,22 @@ class PopupBubble(QWidget):
     def __init__(
         self,
         config: UIConfig,
+        selection_config: Optional[SelectionConfig] = None,
         on_retranslate: Optional[Callable[[str], None]] = None,
         on_switch_provider: Optional[Callable[[str, str], None]] = None,
         on_save_config: Optional[Callable[[], None]] = None,
         on_clear_cache: Optional[Callable[[], None]] = None,
+        on_update_selection_config: Optional[Callable[[], None]] = None,
         available_providers: Optional[list[str]] = None,
     ) -> None:
         super().__init__()
         self.config = config
+        self.selection_config = selection_config or SelectionConfig()
         self.on_retranslate = on_retranslate
         self.on_switch_provider = on_switch_provider
         self.on_save_config = on_save_config
         self.on_clear_cache = on_clear_cache
+        self.on_update_selection_config = on_update_selection_config
         self.available_providers = available_providers or ["deepseek", "openai", "zhipu", "custom"]
         self._current_provider = "deepseek"
         self._last_requested_text = ""
@@ -193,7 +305,7 @@ class PopupBubble(QWidget):
         self.more_btn = QPushButton("⋯", self)
         self.more_btn.setObjectName("action_btn")
         self.more_btn.setFixedSize(26, 26)
-        self.more_btn.setToolTip("更多设置与选项 (主题/透明度)")
+        self.more_btn.setToolTip("更多设置 (透明度滑动条/主题/模式B/快捷键)")
         self.more_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.more_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.more_btn.clicked.connect(self._show_more_menu)
@@ -421,6 +533,39 @@ class PopupBubble(QWidget):
 
         self._save_current_config()
 
+    def _toggle_auto_popup(self, checked: bool) -> None:
+        """切换模式 B：划选松开自动翻译"""
+        self.selection_config.auto_popup_on_selection = checked
+        self._save_current_config()
+        if self.on_update_selection_config:
+            self.on_update_selection_config()
+        status_text = "模式 B 已开启：划词松开自动弹出" if checked else "模式 B 已关闭：仅快捷键/侧键触发（零打扰）"
+        self._flash_status(status_text)
+
+    def _toggle_mouse_side_button(self, checked: bool) -> None:
+        """切换鼠标侧键取词触发"""
+        self.selection_config.enable_mouse_side_button = checked
+        self._save_current_config()
+        if self.on_update_selection_config:
+            self.on_update_selection_config()
+        status_text = "已开启鼠标侧键 (X1/X2) 取词触发" if checked else "已禁用鼠标侧键触发"
+        self._flash_status(status_text)
+
+    def _show_hotkey_settings_dialog(self) -> None:
+        """打开快捷键配置弹窗"""
+        dlg = HotkeySettingsDialog(
+            selection_config=self.selection_config,
+            on_save=self._on_hotkey_dialog_saved,
+            parent=self,
+        )
+        dlg.exec()
+
+    def _on_hotkey_dialog_saved(self) -> None:
+        self._save_current_config()
+        if self.on_update_selection_config:
+            self.on_update_selection_config()
+        self._flash_status(f"快捷键已更新为: {self.selection_config.hotkey}")
+
     def _on_splitter_moved(self, pos: int, index: int) -> None:
         """记录用户拖拽调节的卡片高度比例"""
         sizes = self.splitter.sizes()
@@ -494,7 +639,7 @@ class PopupBubble(QWidget):
             self._flash_status("译文已复制 ✔")
 
     def _show_more_menu(self) -> None:
-        """弹出更多选项设置菜单 (集成主题与透明度)"""
+        """弹出更多选项设置菜单 (集成无级透明度滑动条、主题、模式B、快捷键)"""
         effective = get_effective_theme(self._theme)
         menu = QMenu(self)
         menu.setStyleSheet(get_theme_menu_style(effective))
@@ -512,7 +657,26 @@ class PopupBubble(QWidget):
 
         menu.addSeparator()
 
-        # 3. 🎨 主题风格子菜单
+        # 3. 模式 B：划选直接自动弹出
+        act_auto_pop = menu.addAction("⚡ 划选自动翻译 (模式 B)")
+        act_auto_pop.setCheckable(True)
+        act_auto_pop.setChecked(self.selection_config.auto_popup_on_selection)
+        act_auto_pop.triggered.connect(self._toggle_auto_popup)
+
+        # 4. 鼠标侧键触发开关
+        act_side = menu.addAction("🖱️ 鼠标侧键 (X1/X2) 触发")
+        act_side.setCheckable(True)
+        act_side.setChecked(self.selection_config.enable_mouse_side_button)
+        act_side.triggered.connect(self._toggle_mouse_side_button)
+
+        # 5. 快捷键配置
+        hk_label = self.selection_config.hotkey
+        act_hotkey = menu.addAction(f"⌨️ 快捷键设置 (当前: {hk_label})...")
+        act_hotkey.triggered.connect(self._show_hotkey_settings_dialog)
+
+        menu.addSeparator()
+
+        # 6. 🎨 主题风格子菜单
         theme_menu = menu.addMenu("🎨 主题风格")
         theme_menu.setStyleSheet(get_theme_menu_style(effective))
         for code, name in AVAILABLE_THEMES:
@@ -521,22 +685,67 @@ class PopupBubble(QWidget):
             act = theme_menu.addAction(f"{mark}{name}")
             act.triggered.connect(lambda checked, t=code: self._handle_theme_change(t))
 
-        # 4. 🪟 窗口透明度子菜单
-        opacity_menu = menu.addMenu("🪟 窗口透明度")
-        opacity_menu.setStyleSheet(get_theme_menu_style(effective))
-        for val, label in AVAILABLE_OPACITIES:
-            is_curr = abs(self._opacity - val) < 0.03
-            mark = "✔ " if is_curr else "   "
-            act = opacity_menu.addAction(f"{mark}{label}")
-            act.triggered.connect(lambda checked, o=val: self._handle_opacity_change(o))
+        # 7. 🪟 无级透明度百分比调节 (QSlider 40% ~ 100%)
+        opacity_action = QWidgetAction(menu)
+        op_widget = QWidget(menu)
+        op_layout = QHBoxLayout(op_widget)
+        op_layout.setContentsMargins(12, 4, 12, 4)
+        op_layout.setSpacing(8)
+
+        op_title = QLabel("🪟 透明度:", op_widget)
+        op_title.setStyleSheet("font-size: 11px; font-weight: 500;")
+
+        op_slider = QSlider(Qt.Orientation.Horizontal, op_widget)
+        op_slider.setRange(40, 100)
+        curr_pct = int(round(self._opacity * 100))
+        op_slider.setValue(curr_pct)
+        op_slider.setFixedWidth(100)
+        op_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                height: 4px;
+                background: #30363d;
+                border-radius: 2px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #1f6feb;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #ffffff;
+                border: 1px solid #1f6feb;
+                width: 12px;
+                margin-top: -4px;
+                margin-bottom: -4px;
+                border-radius: 6px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #58a6ff;
+            }
+        """)
+
+        op_val_label = QLabel(f"{curr_pct}%", op_widget)
+        op_val_label.setFixedWidth(34)
+        op_val_label.setStyleSheet("font-size: 11px; color: #58a6ff; font-weight: bold;")
+
+        def _on_slider_change(val: int):
+            op_val_label.setText(f"{val}%")
+            self.apply_theme(opacity=val / 100.0)
+
+        op_slider.valueChanged.connect(_on_slider_change)
+
+        op_layout.addWidget(op_title)
+        op_layout.addWidget(op_slider)
+        op_layout.addWidget(op_val_label)
+        opacity_action.setDefaultWidget(op_widget)
+        menu.addAction(opacity_action)
 
         menu.addSeparator()
 
-        # 5. 恢复默认尺寸与比例
+        # 8. 恢复默认尺寸与比例
         act_reset = menu.addAction("🔄 恢复默认尺寸与比例")
         act_reset.triggered.connect(self._reset_window_geometry)
 
-        # 6. 清空本地缓存
+        # 9. 清空本地缓存
         if self.on_clear_cache:
             act_cache = menu.addAction("🗑️ 清空本地翻译缓存")
             act_cache.triggered.connect(self._handle_clear_cache)
@@ -548,10 +757,6 @@ class PopupBubble(QWidget):
         self.apply_theme(theme_name=theme_code)
         name_map = dict(AVAILABLE_THEMES)
         self._flash_status(f"主题已切换为：{name_map.get(theme_code, theme_code)}")
-
-    def _handle_opacity_change(self, opacity: float) -> None:
-        self.apply_theme(opacity=opacity)
-        self._flash_status(f"透明度已设为：{int(opacity * 100)}%")
 
     def _handle_clear_cache(self) -> None:
         if self.on_clear_cache:

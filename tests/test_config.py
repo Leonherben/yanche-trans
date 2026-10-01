@@ -44,3 +44,12 @@ def test_config_corrupted_fallback(tmp_path: Path):
     fallback_config = AppConfig.load(cfg_file)
     assert fallback_config.default_provider == "deepseek"
     assert fallback_config.default_target_lang == "zh-CN"
+
+
+def test_selection_config_defaults():
+    config = AppConfig()
+    assert config.selection.hotkey == "<alt>+d"
+    assert config.selection.extra_hotkeys == []
+    assert config.selection.enable_mouse_side_button is True
+    assert config.selection.auto_popup_on_selection is False
+

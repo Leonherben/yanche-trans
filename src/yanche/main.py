@@ -54,9 +54,11 @@ class 言澈翻译App(QObject):
         # 悬浮窗与托盘
         self.popup = PopupBubble(
             config=self.config.ui,
+            selection_config=self.config.selection,
             on_switch_provider=self.switch_provider_and_retranslate,
             on_save_config=self.config.save,
             on_clear_cache=self.cache.clear,
+            on_update_selection_config=self._reload_listeners,
             available_providers=list(self.config.providers.keys()),
         )
         self.popup.closed.connect(self._on_popup_closed)
@@ -67,6 +69,7 @@ class 言澈翻译App(QObject):
             on_target_lang_change=self.set_target_lang,
             on_theme_change=lambda t: self.popup.apply_theme(theme_name=t),
             on_opacity_change=lambda o: self.popup.apply_theme(opacity=o),
+            on_toggle_auto_popup=self._on_toggle_auto_popup,
             on_clear_cache=self.cache.clear,
             on_quit=self.shutdown,
         )
@@ -83,6 +86,18 @@ class 言澈翻译App(QObject):
         signal.signal(signal.SIGINT, lambda sig, frame: self.shutdown())
         signal.signal(signal.SIGTERM, lambda sig, frame: self.shutdown())
 
+    def _on_toggle_auto_popup(self, enabled: bool) -> None:
+        self.config.selection.auto_popup_on_selection = enabled
+        self.config.save()
+        self._reload_listeners()
+
+    def _reload_listeners(self) -> None:
+        """当用户在设置中更改快捷键或模式 B 触发方式时热重载监听器"""
+        for listener in self.listeners:
+            listener.stop()
+        self.listeners.clear()
+        self._init_listeners()
+
     def _on_popup_closed(self) -> None:
         """当浮窗隐藏时重置选词记录，以便用户能再次划选相同单词"""
         for listener in self.listeners:
@@ -95,25 +110,30 @@ class 言澈翻译App(QObject):
 
     def _init_listeners(self) -> None:
         """根据当前系统环境自适应加载取词器"""
-        # Linux X11 Primary 监听
+        x11_listener = None
+        # Linux X11 Primary 监听 (负责选区检测、模式 B 自动弹窗及鼠标侧键取词)
         if sys.platform.startswith("linux") and self.config.selection.enable_x11_primary:
             x11_listener = LinuxX11SelectionListener(
                 callback=self.on_text_selected,
                 min_length=self.config.selection.min_length,
                 max_length=self.config.selection.max_length,
                 debounce_ms=self.config.selection.debounce_ms,
+                auto_popup=self.config.selection.auto_popup_on_selection,
+                enable_mouse_side_button=self.config.selection.enable_mouse_side_button,
                 on_empty_click=self.on_empty_click,
             )
             self.listeners.append(x11_listener)
 
-        # 全局热键监听器 (Windows 或通用模式)
+        # 全局热键监听器 (Alt+D 及其他多快捷键)
         if self.config.selection.hotkey:
             hotkey_listener = HotkeySelectionListener(
                 callback=self.on_text_selected,
                 hotkey_str=self.config.selection.hotkey,
+                extra_hotkeys=self.config.selection.extra_hotkeys,
                 min_length=self.config.selection.min_length,
                 max_length=self.config.selection.max_length,
                 on_empty_click=self.on_empty_click,
+                get_x11_selection_fn=x11_listener.get_current_selection if x11_listener else None,
             )
             self.listeners.append(hotkey_listener)
 

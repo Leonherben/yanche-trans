@@ -289,3 +289,61 @@ def test_popup_four_corner_resize_regions(qapp):
     popup.close()
 
 
+def test_popup_opacity_change(qapp):
+    config = UIConfig()
+    popup = PopupBubble(config)
+    popup.apply_theme(opacity=0.75)
+    assert popup.windowOpacity() == pytest.approx(0.75, abs=0.01)
+    assert popup.config.window_opacity == pytest.approx(0.75, abs=0.01)
+
+    # 边界保护 (40% ~ 100%)
+    popup.apply_theme(opacity=0.1)
+    assert popup.config.window_opacity == pytest.approx(0.4, abs=0.01)
+    popup.apply_theme(opacity=1.5)
+    assert popup.config.window_opacity == pytest.approx(1.0, abs=0.01)
+    popup.close()
+
+
+def test_popup_mode_b_and_side_button(qapp):
+    from yanche.core.config import SelectionConfig
+    saved = []
+    sel_config = SelectionConfig(auto_popup_on_selection=False, enable_mouse_side_button=True)
+    popup = PopupBubble(
+        UIConfig(),
+        selection_config=sel_config,
+        on_save_config=lambda: saved.append("saved"),
+        on_update_selection_config=lambda: saved.append("updated_selection"),
+    )
+
+    # 切换模式 B 开启
+    popup._toggle_auto_popup(True)
+    assert sel_config.auto_popup_on_selection is True
+    assert "updated_selection" in saved
+
+    # 切换鼠标侧键关闭
+    popup._toggle_mouse_side_button(False)
+    assert sel_config.enable_mouse_side_button is False
+    popup.close()
+
+
+def test_hotkey_settings_dialog(qapp):
+    from yanche.core.config import SelectionConfig
+    from yanche.adapters.gui.popup import HotkeySettingsDialog
+
+    saved = []
+    sel_config = SelectionConfig(hotkey="<alt>+d")
+    dialog = HotkeySettingsDialog(
+        sel_config,
+        on_save=lambda: saved.append(True),
+    )
+    assert dialog.input_hotkey.text() == "<alt>+d"
+
+    # 修改快捷键并保存生效
+    dialog.input_hotkey.setText("<ctrl>+<alt>+x")
+    dialog._save_and_apply()
+    assert sel_config.hotkey == "<ctrl>+<alt>+x"
+    assert len(saved) == 1
+    dialog.close()
+
+
+

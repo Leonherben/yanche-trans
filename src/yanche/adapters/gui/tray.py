@@ -24,6 +24,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
         on_target_lang_change: Optional[Callable[[str], None]] = None,
         on_theme_change: Optional[Callable[[str], None]] = None,
         on_opacity_change: Optional[Callable[[float], None]] = None,
+        on_toggle_auto_popup: Optional[Callable[[bool], None]] = None,
         on_clear_cache: Optional[Callable[[], None]] = None,
         on_quit: Optional[Callable[[], None]] = None,
     ) -> None:
@@ -35,6 +36,7 @@ class 言澈翻译Tray(QSystemTrayIcon):
         self.on_target_lang_change = on_target_lang_change
         self.on_theme_change = on_theme_change
         self.on_opacity_change = on_opacity_change
+        self.on_toggle_auto_popup = on_toggle_auto_popup
         self.on_clear_cache = on_clear_cache
         self.on_quit = on_quit
 
@@ -76,10 +78,15 @@ class 言澈翻译Tray(QSystemTrayIcon):
     def _build_menu(self) -> None:
         menu = QMenu()
 
-        # 1. 状态开关
-        self.toggle_action = QAction("✔ 划词监听: 开启", menu)
+        # 1. 状态开关与模式 B
+        self.toggle_action = QAction("✔ 取词服务: 开启", menu)
         self.toggle_action.triggered.connect(self._handle_toggle)
         menu.addAction(self.toggle_action)
+
+        self.auto_popup_action = QAction("⚡ 划选自动翻译 (模式 B)", menu, checkable=True)
+        self.auto_popup_action.setChecked(self.config.selection.auto_popup_on_selection)
+        self.auto_popup_action.triggered.connect(self._handle_toggle_auto_popup)
+        menu.addAction(self.auto_popup_action)
 
         menu.addSeparator()
 
@@ -171,6 +178,14 @@ class 言澈翻译Tray(QSystemTrayIcon):
         self.config.save()
         if self.on_opacity_change:
             self.on_opacity_change(opacity)
+
+    def _handle_toggle_auto_popup(self, checked: bool) -> None:
+        self.config.selection.auto_popup_on_selection = checked
+        self.config.save()
+        if self.on_toggle_auto_popup:
+            self.on_toggle_auto_popup(checked)
+        tip = "模式 B 已开启：划选松开自动翻译" if checked else "模式 B 已关闭：仅快捷键/侧键触发 (零打扰)"
+        self.showMessage("言澈翻译", tip, QSystemTrayIcon.MessageIcon.Information, 1500)
 
     def _handle_toggle(self) -> None:
         self._listener_enabled = not self._listener_enabled

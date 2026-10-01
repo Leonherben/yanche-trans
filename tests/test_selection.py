@@ -78,3 +78,99 @@ def test_linux_x11_repeat_selection_and_reset(mocker):
     listener._process_selection(50, 60)
     assert len(empty_clicks) == 1
     assert empty_clicks[0] == (50, 60)
+
+
+def test_linux_x11_auto_popup_false(mocker):
+    from yanche.adapters.selection.linux_x11 import LinuxX11SelectionListener
+
+    callbacks = []
+    empty_clicks = []
+
+    # 模式 B：划选不自动弹窗 (auto_popup=False)
+    listener = LinuxX11SelectionListener(
+        callback=lambda text, pos: callbacks.append((text, pos)),
+        auto_popup=False,
+        debounce_ms=0,
+        on_empty_click=lambda pos: empty_clicks.append(pos),
+    )
+
+    # 1. 划选了有效文本时，因为 auto_popup 为 False，不触发 callback
+    mocker.patch.object(listener, "_get_primary_selection", return_value="hello world")
+    listener._process_selection(100, 200, force=False)
+    assert len(callbacks) == 0
+    assert len(empty_clicks) == 0
+
+    # 2. 模拟普通单击（未划选文本），应触发 on_empty_click 关闭已有浮窗
+    mocker.patch.object(listener, "_get_primary_selection", return_value="")
+    listener._process_selection(100, 200, force=False)
+    assert len(callbacks) == 0
+    assert len(empty_clicks) == 1
+    assert empty_clicks[0] == (100, 200)
+
+
+def test_linux_x11_mouse_side_buttons(mocker):
+    import time
+    from pynput import mouse
+    from yanche.adapters.selection.linux_x11 import LinuxX11SelectionListener
+
+    callbacks = []
+    listener = LinuxX11SelectionListener(
+        callback=lambda text, pos: callbacks.append((text, pos)),
+        auto_popup=False,
+        enable_mouse_side_button=True,
+        debounce_ms=0,
+    )
+    listener._is_running = True
+
+    mocker.patch.object(listener, "_get_primary_selection", return_value="side button translation")
+
+    # 1. 验证 force=True (侧键触发) 即使 auto_popup=False 也能立即触发翻译
+    listener._process_selection(300, 400, force=True)
+    assert len(callbacks) == 1
+    assert callbacks[0] == ("side button translation", (300, 400))
+
+    # 2. 验证 _on_click 派发侧键逻辑
+    processed = []
+    mocker.patch.object(listener, "_process_selection", lambda x, y, force=False: processed.append((x, y, force)))
+
+    b8 = getattr(mouse.Button, "button8", getattr(mouse.Button, "x1", None))
+    b9 = getattr(mouse.Button, "button9", getattr(mouse.Button, "x2", None))
+
+    listener._on_click(300, 400, b8, False)
+    time.sleep(0.05)
+    assert len(processed) == 1
+    assert processed[0] == (300, 400, True)
+
+    listener._on_click(350, 450, b9, False)
+    time.sleep(0.05)
+    assert len(processed) == 2
+    assert processed[1] == (350, 450, True)
+
+    # 3. 若禁用侧键，则不派发
+    listener.enable_mouse_side_button = False
+    listener._on_click(300, 400, b8, False)
+    time.sleep(0.05)
+    assert len(processed) == 2
+
+
+
+def test_hotkey_selection_listener_trigger(mocker):
+    from pynput import mouse
+    from yanche.adapters.selection.hotkey_fallback import HotkeySelectionListener
+
+    callbacks = []
+    listener = HotkeySelectionListener(
+        callback=lambda text, pos: callbacks.append((text, pos)),
+        hotkey_str="<alt>+d",
+        extra_hotkeys=["<ctrl>+<alt>+t"],
+        get_x11_selection_fn=lambda: "instant selected text",
+    )
+
+    mocker.patch.object(mouse.Controller, "position", new_callable=mocker.PropertyMock, return_value=(250, 350))
+    # 模拟触发捕获流程
+    listener._trigger_capture()
+
+    assert len(callbacks) == 1
+    assert callbacks[0] == ("instant selected text", (250, 350))
+
+

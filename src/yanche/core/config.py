@@ -30,11 +30,14 @@ class ProviderConfig(BaseModel):
 
 class SelectionConfig(BaseModel):
     """划词触发策略配置"""
-    enable_x11_primary: bool = True  # Linux 下鼠标划选松开自动翻译
+    enable_x11_primary: bool = True  # Linux 下是否加载 X11 选区服务
+    auto_popup_on_selection: bool = False  # 模式 B：划选松开自动翻译（默认关闭，保持不打扰）
     debounce_ms: int = 200           # 选词消抖延迟毫秒
     min_length: int = 1              # 最小划词字符数
     max_length: int = 2000           # 最大划词字符数
-    hotkey: str = "<ctrl>+<alt>+t"   # 通用选词/翻译热键
+    hotkey: str = "<alt>+d"          # 主选词/翻译热键 (Alt + D)
+    extra_hotkeys: list[str] = Field(default_factory=list)  # 额外绑定的多快捷键
+    enable_mouse_side_button: bool = True  # 启用鼠标侧键 (X1/X2) 划词取词触发
     panic_hotkey: str = "<ctrl>+<alt>+<esc>"  # 紧急逃生键
 
 
