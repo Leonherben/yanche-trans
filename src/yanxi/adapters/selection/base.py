@@ -23,16 +23,24 @@ class BaseSelectionListener(ABC):
         min_length: int = 1,
         max_length: int = 3000,
         on_empty_click: Optional[EmptyClickCallback] = None,
+        is_inside_popup: Optional[Callable[[Tuple[int, int]], bool]] = None,
     ) -> None:
         self.callback = callback
         self.min_length = min_length
         self.max_length = max_length
         self.on_empty_click = on_empty_click
+        self.is_inside_popup = is_inside_popup
         self._is_running = False
+        self._close_cooldown_until: float = 0.0
+
+    def on_popup_closed(self) -> None:
+        """当浮窗关闭或收起时调用，激活防误触保护冷却"""
+        import time
+        self._close_cooldown_until = time.time() + 0.35
 
     def reset_last_selection(self) -> None:
-        """重置上次选词记录（在浮窗关闭或取消选中时调用）"""
-        pass
+        """重置上次选词记录（向后兼容）"""
+        self.on_popup_closed()
 
     def sanitize_text(self, text: str) -> Optional[str]:
         """对获取到的选中文本进行合规性清洗与边界过滤"""

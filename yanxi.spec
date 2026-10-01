@@ -37,6 +37,7 @@ hiddenimports = [
     "yanxi.adapters.gui.settings_dialog",
     "yanxi.adapters.selection.base",
     "yanxi.adapters.selection.linux_x11",
+    "yanxi.adapters.selection.windows",
     "yanxi.adapters.selection.hotkey_fallback",
     "yanxi.core.config",
     "yanxi.core.models",

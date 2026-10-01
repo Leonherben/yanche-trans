@@ -84,6 +84,7 @@ class UIConfig(BaseModel):
     splitter_sizes: list[int] = Field(default_factory=lambda: [90, 180])  # 原文与译文高度分配
     auto_hide_seconds: int = 8       # 失去交互后自动收起秒数（0表示不自动收起）
     window_opacity: float = 0.95     # 窗口透明度 (0.4 ~ 1.0)
+    open_on_startup: bool = True     # 打开应用时是否自动展示悬浮窗 (默认开启)
 
 
 class UpdateConfig(BaseModel):

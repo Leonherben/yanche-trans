@@ -1,29 +1,31 @@
-"""Linux X11 原生划词监听器 (X11 Primary Selection Listener)
+"""Windows 原生划词与鼠标手势监听器 (Windows Selection Listener)
 
-基于 Linux X11 桌面 Primary Selection 机制与鼠标左键/侧键释放事件。
-支持模式 B（划选自动弹出开关）与鼠标侧键（X1/X2 前进后退键）一键极速取词。
+基于 Windows 鼠标低级钩子 (Low-Level Mouse Hook) 与智能剪贴板保护提取机制。
+支持划选松开自动翻译 (模式 B)、鼠标侧键 (X1/X2) 零延迟取词与空白点击智能收起。
 """
 
 from __future__ import annotations
 import math
-import subprocess
+import sys
 import threading
 import time
-from typing import Optional, Tuple, Callable
-from pynput import mouse
+from typing import Callable, Optional, Tuple
+from pynput import keyboard, mouse
+import pyperclip
+
 from yanxi.adapters.selection.base import BaseSelectionListener, SelectionCallback
 
 
-class LinuxX11SelectionListener(BaseSelectionListener):
-    """基于鼠标释放、侧键与 X11 Primary Selection 的零侵入取词器"""
+class WindowsSelectionListener(BaseSelectionListener):
+    """Windows 平台高精度划词与鼠标手势监听器"""
 
     def __init__(
         self,
         callback: SelectionCallback,
         min_length: int = 1,
         max_length: int = 3000,
-        debounce_ms: int = 200,
-        repeat_threshold_seconds: float = 1.5,
+        debounce_ms: int = 150,
+        repeat_threshold_seconds: float = 1.2,
         auto_popup: bool = True,
         enable_mouse_side_button: bool = True,
         on_empty_click: Optional[Callable[[Tuple[int, int]], None]] = None,
@@ -43,14 +45,14 @@ class LinuxX11SelectionListener(BaseSelectionListener):
         self._last_selected_text: str = ""
         self._last_trigger_time: float = 0.0
 
-        # 鼠标拖拽与双击手势识别
+        # 手势识别追踪
         self._press_pos: Optional[Tuple[int, int]] = None
         self._press_time: float = 0.0
         self._last_click_pos: Optional[Tuple[int, int]] = None
         self._last_click_time: float = 0.0
         self._click_count: int = 0
 
-        self._mouse_controller = mouse.Controller()
+        self._keyboard_controller = keyboard.Controller()
         self._mouse_listener: Optional[mouse.Listener] = None
         self._stop_event = threading.Event()
 
@@ -60,93 +62,136 @@ class LinuxX11SelectionListener(BaseSelectionListener):
         self._press_pos = None
 
     def reset_last_selection(self) -> None:
-        """重置选词记录与时间戳"""
-        self._last_selected_text = ""
-        self._last_trigger_time = 0.0
-        self._press_pos = None
+        """重置选词状态并激活关闭冷却"""
+        self.on_popup_closed()
 
-    def _get_primary_selection(self) -> str:
-        """从 X11 Primary 剪贴板获取选中文本"""
-        try:
-            # 优先使用 xsel -o (快速且非阻塞)
-            res = subprocess.run(
-                ["xsel", "-o"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=0.3,
-            )
-            return res.stdout
-        except Exception:
+    def _release_modifier_keys(self) -> None:
+        """显式释放修饰键，防止 Alt/Ctrl 粘滞影响复制或激活菜单栏"""
+        if sys.platform == "win32":
             try:
-                # 备用方案：xclip -o
-                res = subprocess.run(
-                    ["xclip", "-o"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                    timeout=0.3,
-                )
-                return res.stdout
+                import ctypes
+                user32 = ctypes.windll.user32
+                # VK_MENU (Alt)=0x12, VK_CONTROL=0x11, VK_SHIFT=0x10, KEYEVENTF_KEYUP=0x0002
+                user32.keybd_event(0x12, 0, 0x0002, 0)
+                user32.keybd_event(0x11, 0, 0x0002, 0)
+                user32.keybd_event(0x10, 0, 0x0002, 0)
             except Exception:
-                return ""
+                pass
+        try:
+            self._keyboard_controller.release(keyboard.Key.alt)
+            self._keyboard_controller.release(keyboard.Key.alt_l)
+            self._keyboard_controller.release(keyboard.Key.alt_r)
+            self._keyboard_controller.release(keyboard.Key.ctrl)
+            self._keyboard_controller.release(keyboard.Key.shift)
+        except Exception:
+            pass
 
-    def get_current_selection(self) -> str:
-        """公开只读探测当前 X11 选中文本（供快捷键直接复用）"""
-        raw = self._get_primary_selection()
-        return self.sanitize_text(raw)
+    def _send_ctrl_c(self) -> None:
+        """Windows 下发送标准的 Ctrl+C 复制按键序列"""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                # VK_CONTROL = 0x11, 'C' = 0x43
+                user32.keybd_event(0x11, 0, 0, 0)         # Ctrl down
+                user32.keybd_event(0x43, 0, 0, 0)         # C down
+                time.sleep(0.01)
+                user32.keybd_event(0x43, 0, 0x0002, 0)    # C up
+                user32.keybd_event(0x11, 0, 0x0002, 0)    # Ctrl up
+                return
+            except Exception:
+                pass
+
+        try:
+            self._keyboard_controller.press(keyboard.Key.ctrl)
+            self._keyboard_controller.press("c")
+            self._keyboard_controller.release("c")
+            self._keyboard_controller.release(keyboard.Key.ctrl)
+        except Exception:
+            pass
+
+    def _capture_selected_text_via_clipboard(self) -> str:
+        """通过剪贴板安全捕获当前选中文本，并异步恢复原剪贴板内容"""
+        old_text = ""
+        try:
+            old_text = pyperclip.paste()
+        except Exception:
+            pass
+
+        self._release_modifier_keys()
+        time.sleep(0.015)
+        self._send_ctrl_c()
+
+        # 动态轮询等待剪贴板刷新 (最多 180ms)
+        new_text = ""
+        for _ in range(6):
+            time.sleep(0.03)
+            try:
+                curr = pyperclip.paste()
+                if curr and curr != old_text:
+                    new_text = curr
+                    break
+            except Exception:
+                pass
+        else:
+            try:
+                new_text = pyperclip.paste()
+            except Exception:
+                new_text = ""
+
+        # 异步恢复原剪贴板，绝不污染用户剪贴历史
+        if old_text and old_text != new_text:
+            def _restore():
+                time.sleep(0.5)
+                try:
+                    pyperclip.copy(old_text)
+                except Exception:
+                    pass
+            threading.Thread(target=_restore, daemon=True).start()
+
+        return new_text
 
     def _on_click(self, x: int, y: int, button: mouse.Button, pressed: bool) -> None:
-        """鼠标按键释放与点击事件派发（带拖选识别与悬浮窗坐标防误触）"""
+        """处理鼠标点击与释放事件"""
         if not self._is_running:
             return
 
-        # 1. 冷却保护期内（例如刚点击了关闭按钮），忽略一切鼠标事件
+        # 1. 冷却保护期内（例如刚关闭了窗口），不响应
         if time.time() < self._close_cooldown_until:
             return
 
-        # 2. 如果点击发生在悬浮窗自身内部（例如点击关闭 '✕' 或卡片按钮），绝对不触发选词或收起
+        # 2. 如果点击落在悬浮窗内部，属于浮窗自身交互，不触发划词
         if self.is_inside_popup and self.is_inside_popup((int(x), int(y))):
             self._press_pos = None
             return
 
-        # 3. 鼠标侧键 (X1 / X2 / 后退 / 前进) 零延迟取词翻译
+        # 3. 鼠标侧键 (X1 / X2 / 后退 / 前进) 零延迟取词
         side_buttons = {
             b for b in (
                 getattr(mouse.Button, "x1", None),
                 getattr(mouse.Button, "x2", None),
-                getattr(mouse.Button, "button8", None),
-                getattr(mouse.Button, "button9", None),
             ) if b is not None
         }
-        is_side = button in side_buttons or str(button) in (
-            "Button.x1",
-            "Button.x2",
-            "Button.button8",
-            "Button.button9",
-            "<8>",
-            "<9>",
-        )
+        is_side = button in side_buttons or str(button) in ("Button.x1", "Button.x2", "<x1>", "<x2>")
         if self.enable_mouse_side_button and is_side and not pressed:
             threading.Thread(
                 target=self._process_selection, args=(x, y, True), daemon=True
             ).start()
             return
 
-        # 4. 鼠标左键按下与释放检测（区分真实划选/双击与普通单击）
+        # 4. 鼠标左键划选与双击手势
         if button == mouse.Button.left:
             if pressed:
                 self._press_pos = (int(x), int(y))
                 self._press_time = time.time()
             else:
-                # 释放事件
                 now = time.time()
                 press_x, press_y = self._press_pos if self._press_pos is not None else (int(x), int(y))
                 self._press_pos = None
 
                 drag_distance = math.hypot(x - press_x, y - press_y)
 
-                # 双击检测 (400ms 内且距离小于 8px)
+                # 双击检测 (400ms 内且坐标距离小于 8px)
                 is_double_click = False
                 if (
                     self._last_click_pos is not None
@@ -165,18 +210,17 @@ class LinuxX11SelectionListener(BaseSelectionListener):
                 is_drag_selection = (drag_distance >= 6)
 
                 if is_drag_selection or is_double_click:
-                    # 确认为真实划词手势（拖拽或双击单词）
                     if self.auto_popup:
                         threading.Thread(
                             target=self._process_selection, args=(x, y, False), daemon=True
                         ).start()
                 else:
-                    # 普通单击空白处（非划词动作）：仅负责收起未钉住的悬浮窗，绝不误触划词
+                    # 单击空白处：触发收起悬浮窗
                     if self.on_empty_click:
                         self.on_empty_click((int(x), int(y)))
 
     def _process_selection(self, x: int, y: int, force: bool = False) -> None:
-        """核心选词提取与消抖流程"""
+        """执行选词提取流水线"""
         if not force and self.debounce_ms > 0:
             time.sleep(self.debounce_ms / 1000.0)
         if self._stop_event.is_set():
@@ -185,8 +229,7 @@ class LinuxX11SelectionListener(BaseSelectionListener):
             return
         if self.is_inside_popup and self.is_inside_popup((int(x), int(y))):
             return
-
-        raw_text = self._get_primary_selection()
+        raw_text = self._capture_selected_text_via_clipboard()
         sanitized = self.sanitize_text(raw_text)
         now = time.time()
 
@@ -196,7 +239,6 @@ class LinuxX11SelectionListener(BaseSelectionListener):
             return
 
         if sanitized:
-            # 文本变更、侧键主动强制、或同词二次划选
             if (
                 force
                 or sanitized != self._last_selected_text
@@ -205,22 +247,18 @@ class LinuxX11SelectionListener(BaseSelectionListener):
                 self._last_selected_text = sanitized
                 self._last_trigger_time = now
                 self.callback(sanitized, (int(x), int(y)))
-        else:
-            if self.on_empty_click and not force:
-                self.on_empty_click((int(x), int(y)))
 
     def start(self) -> None:
-        """启动监听器"""
+        """启动 Windows 鼠标监听器"""
         if self._is_running:
             return
         self._is_running = True
         self._stop_event.clear()
-
         self._mouse_listener = mouse.Listener(on_click=self._on_click)
         self._mouse_listener.start()
 
     def stop(self) -> None:
-        """安全停止监听"""
+        """停止监听器"""
         self._is_running = False
         self._stop_event.set()
         if self._mouse_listener:

@@ -73,6 +73,8 @@ def test_settings_dialog_modify_and_save(qapp, tmp_path):
     # 3. 修改外观 Tab
     dialog.opacity_slider.setValue(80)
     dialog.auto_hide_spin.setValue(12)
+    assert dialog.open_on_startup_check.isChecked() is True
+    dialog.open_on_startup_check.setChecked(False)
 
     # 4. 点击保存
     dialog._on_save_clicked()
@@ -86,6 +88,7 @@ def test_settings_dialog_modify_and_save(qapp, tmp_path):
     assert saved.selection.extra_hotkeys == ["<ctrl>+<alt>+<w>"]
     assert saved.ui.window_opacity == 0.8
     assert saved.ui.auto_hide_seconds == 12
+    assert saved.ui.open_on_startup is False
 
     dialog.close()
 

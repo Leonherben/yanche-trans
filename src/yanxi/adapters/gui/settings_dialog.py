@@ -453,6 +453,11 @@ class SettingsDialog(QDialog):
         self.auto_hide_spin.setValue(getattr(self.working_config.ui, "auto_hide_seconds", 8))
         form_layout.addRow("自动收起等待:", self.auto_hide_spin)
 
+        # 启动时自动展示悬浮窗
+        self.open_on_startup_check = QCheckBox("启动应用时自动展示悬浮窗", ui_group)
+        self.open_on_startup_check.setChecked(getattr(self.working_config.ui, "open_on_startup", True))
+        form_layout.addRow("启动行为:", self.open_on_startup_check)
+
         layout.addWidget(ui_group)
         layout.addStretch()
         return widget
@@ -617,6 +622,7 @@ class SettingsDialog(QDialog):
         ui.theme = self.theme_combo.currentData()
         ui.window_opacity = round(self.opacity_slider.value() / 100.0, 2)
         ui.auto_hide_seconds = self.auto_hide_spin.value()
+        ui.open_on_startup = self.open_on_startup_check.isChecked()
 
         # 收集更新配置
         self.working_config.update.auto_check_update = self.auto_update_check.isChecked()

@@ -42,6 +42,7 @@ from yanxi.adapters.gui.settings_dialog import SettingsDialog
 from yanxi.adapters.gui.icon_helper import get_app_icon, configure_windows_app_id
 from yanxi.adapters.selection.base import BaseSelectionListener
 from yanxi.adapters.selection.linux_x11 import LinuxX11SelectionListener
+from yanxi.adapters.selection.windows import WindowsSelectionListener
 from yanxi.adapters.selection.hotkey_fallback import HotkeySelectionListener
 
 
@@ -95,6 +96,10 @@ class 言蹊翻译App(QObject):
         self._init_listeners()
         self._init_panic_failsafe()
 
+        # 启动时自动打开悬浮窗 (满足用户“打开应用就打开悬浮窗”的需求)
+        if getattr(self.config.ui, "open_on_startup", True):
+            QTimer.singleShot(150, self.popup.open_for_input)
+
         # 静默后台检查更新（启动 3 秒后执行，避免阻塞冷启动）
         if getattr(self.config, "update", None) and self.config.update.auto_check_update:
             QTimer.singleShot(3000, self._check_update_silently)
@@ -117,9 +122,18 @@ class 言蹊翻译App(QObject):
         self._init_listeners()
 
     def _on_popup_closed(self) -> None:
-        """当浮窗隐藏时重置选词记录，以便用户能再次划选相同单词"""
+        """当浮窗隐藏或关闭时通知所有监听器进入冷却期，防止关闭动作误触划词"""
         for listener in self.listeners:
-            listener.reset_last_selection()
+            listener.on_popup_closed()
+
+    def is_inside_popup(self, cursor_pos: Tuple[int, int]) -> bool:
+        """检查鼠标坐标是否落在当前显示的悬浮窗之内（含适度感应边缘扩充）"""
+        if not self.popup.isVisible():
+            return False
+        x, y = cursor_pos
+        # 扩展 4px 感应边距，避免用户点在边框或阴影边缘误判为外部
+        geom = self.popup.frameGeometry().adjusted(-4, -4, 4, 4)
+        return geom.contains(x, y)
 
     def on_empty_click(self, cursor_pos: Tuple[int, int]) -> None:
         """用户在空白处点击（未产生划词）时，若浮窗处于显示状态且未钉住则自动收起"""
@@ -139,8 +153,23 @@ class 言蹊翻译App(QObject):
                 auto_popup=self.config.selection.auto_popup_on_selection,
                 enable_mouse_side_button=self.config.selection.enable_mouse_side_button,
                 on_empty_click=self.on_empty_click,
+                is_inside_popup=self.is_inside_popup,
             )
             self.listeners.append(x11_listener)
+
+        # Windows 原生划词与鼠标手势监听 (模式 B 划选自动弹窗、鼠标侧键及空白点击收起)
+        elif sys.platform == "win32":
+            win_listener = WindowsSelectionListener(
+                callback=self.on_text_selected,
+                min_length=self.config.selection.min_length,
+                max_length=self.config.selection.max_length,
+                debounce_ms=self.config.selection.debounce_ms,
+                auto_popup=self.config.selection.auto_popup_on_selection,
+                enable_mouse_side_button=self.config.selection.enable_mouse_side_button,
+                on_empty_click=self.on_empty_click,
+                is_inside_popup=self.is_inside_popup,
+            )
+            self.listeners.append(win_listener)
 
         # 全局热键监听器 (Alt+D 及其他多快捷键)
         if self.config.selection.hotkey:

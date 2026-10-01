@@ -75,6 +75,7 @@ def test_linux_x11_repeat_selection_and_reset(mocker):
 
     # 5. 模拟普通单击（未划选有效文本），应触发 on_empty_click
     mocker.patch.object(listener, "_get_primary_selection", return_value="")
+    mocker.patch("time.time", side_effect=[105.0, 105.0])
     listener._process_selection(50, 60)
     assert len(empty_clicks) == 1
     assert empty_clicks[0] == (50, 60)
@@ -222,6 +223,79 @@ def test_hotkey_helpers_normalize_and_display():
     assert is_valid_pynput_hotkey("<f2>") is True
     assert is_valid_pynput_hotkey("invalid_combo_string") is False
     assert is_valid_pynput_hotkey("") is False
+
+
+def test_linux_x11_is_inside_popup_ignored(mocker):
+    from yanxi.adapters.selection.linux_x11 import LinuxX11SelectionListener
+    from pynput import mouse
+
+    callbacks = []
+    # 模拟悬浮窗区域在 (100, 100) 到 (300, 300)
+    def inside_popup(pos):
+        x, y = pos
+        return 100 <= x <= 300 and 100 <= y <= 300
+
+    listener = LinuxX11SelectionListener(
+        callback=lambda text, pos: callbacks.append((text, pos)),
+        auto_popup=True,
+        debounce_ms=0,
+        is_inside_popup=inside_popup,
+    )
+    listener._is_running = True
+    mocker.patch.object(listener, "_get_primary_selection", return_value="hello")
+
+    # 点击落在浮窗内部（例如点击关闭按钮 (290, 110)），应当被完全忽略
+    listener._on_click(290, 110, mouse.Button.left, True)
+    listener._on_click(290, 110, mouse.Button.left, False)
+    assert len(callbacks) == 0
+
+    # 浮窗关闭冷却保护期内，同样忽略
+    listener.on_popup_closed()
+    listener._process_selection(400, 400)
+    assert len(callbacks) == 0
+
+
+def test_windows_selection_listener(mocker):
+    from yanxi.adapters.selection.windows import WindowsSelectionListener
+    from pynput import mouse
+
+    callbacks = []
+    empty_clicks = []
+
+    def inside_popup(pos):
+        return pos[0] < 50
+
+    listener = WindowsSelectionListener(
+        callback=lambda text, pos: callbacks.append((text, pos)),
+        auto_popup=True,
+        debounce_ms=0,
+        on_empty_click=lambda pos: empty_clicks.append(pos),
+        is_inside_popup=inside_popup,
+    )
+    listener._is_running = True
+
+    # 1. 模拟浮窗内点击，忽略
+    listener._on_click(30, 30, mouse.Button.left, True)
+    listener._on_click(30, 30, mouse.Button.left, False)
+    assert len(callbacks) == 0
+
+    # 2. 模拟真实划选拖拽手势 (从 100,100 拖到 200,100)
+    mocker.patch.object(listener, "_capture_selected_text_via_clipboard", return_value="Windows Selected Text")
+    listener._on_click(100, 100, mouse.Button.left, True)
+    listener._on_click(200, 100, mouse.Button.left, False)
+    # 给线程一点点调度时间
+    import time
+    time.sleep(0.05)
+
+    assert len(callbacks) == 1
+    assert callbacks[0] == ("Windows Selected Text", (200, 100))
+
+    # 3. 模拟普通单击（未拖拽且非双击），触发 empty_click
+    listener._on_click(300, 300, mouse.Button.left, True)
+    listener._on_click(300, 300, mouse.Button.left, False)
+    assert len(empty_clicks) == 1
+    assert empty_clicks[0] == (300, 300)
+
 
 
 
