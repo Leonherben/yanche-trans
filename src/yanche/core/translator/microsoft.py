@@ -88,29 +88,39 @@ class MicrosoftTranslator(BaseTranslator):
             if not force_refresh and self._session and self._session.is_valid():
                 return self._session
 
-            client = create_safe_http_client(self.config.timeout_seconds)
+            candidate_urls = [
+                "https://www.bing.com/translator",
+                "https://cn.bing.com/translator",
+            ]
+            client = create_safe_http_client(self.config.timeout_seconds, follow_redirects=True)
             try:
-                resp = client.get("https://www.bing.com/translator", headers=self._headers)
-                resp.raise_for_status()
-                html = resp.text
+                last_err = None
+                for page_url in candidate_urls:
+                    try:
+                        resp = client.get(page_url, headers=self._headers)
+                        resp.raise_for_status()
+                        html = resp.text
 
-                ig_match = re.search(r'IG:"([A-Fa-f0-9]+)"', html)
-                iid_match = re.search(r'data-iid="([^"]+)"', html)
-                abuse_match = re.search(r'params_AbusePreventionHelper\s*=\s*\[(\d+),"([^"]+)",(\d+)\]', html)
+                        ig_match = re.search(r'IG:"([A-Fa-f0-9]+)"', html)
+                        iid_match = re.search(r'data-iid="([^"]+)"', html)
+                        abuse_match = re.search(r'params_AbusePreventionHelper\s*=\s*\[(\d+),"([^"]+)",(\d+)\]', html)
 
-                if not (ig_match and iid_match and abuse_match):
-                    raise ValueError("无法从必应翻译主页解析动态防滥用会话凭证")
+                        if ig_match and iid_match and abuse_match:
+                            ig = ig_match.group(1)
+                            iid = iid_match.group(1)
+                            key = abuse_match.group(1)
+                            token = abuse_match.group(2)
+                            interval_ms = int(abuse_match.group(3))
 
-                ig = ig_match.group(1)
-                iid = iid_match.group(1)
-                key = abuse_match.group(1)
-                token = abuse_match.group(2)
-                interval_ms = int(abuse_match.group(3))
+                            # 会话通常有效期 1 小时，提前 5 分钟过期
+                            expires_at = time.time() + max(300, (interval_ms / 1000) - 300)
+                            self._session = _BingSession(ig, iid, key, token, expires_at)
+                            return self._session
+                    except Exception as e:
+                        last_err = e
+                        continue
 
-                # 会话通常有效期 1 小时，提前 5 分钟过期
-                expires_at = time.time() + max(300, (interval_ms / 1000) - 300)
-                self._session = _BingSession(ig, iid, key, token, expires_at)
-                return self._session
+                raise ValueError(f"无法从必应翻译主页解析动态防滥用会话凭证 ({last_err})")
             finally:
                 client.close()
 
@@ -119,7 +129,7 @@ class MicrosoftTranslator(BaseTranslator):
         mapped_src = self._map_lang(src_lang, is_source=True)
         mapped_tgt = self._map_lang(tgt_lang, is_source=False)
 
-        client = create_safe_http_client(self.config.timeout_seconds)
+        client = create_safe_http_client(self.config.timeout_seconds, follow_redirects=True)
         try:
             for attempt in range(2):
                 session = self._get_bing_session(force_refresh=(attempt > 0))

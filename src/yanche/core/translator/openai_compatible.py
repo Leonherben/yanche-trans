@@ -21,14 +21,14 @@ def normalize_proxy_env() -> None:
             os.environ[key] = "socks5://" + val[len("socks://"):]
 
 
-def create_safe_http_client(timeout_seconds: float) -> httpx.Client:
-    """创建具备异常代理自愈能力的 HTTP 客户端"""
+def create_safe_http_client(timeout_seconds: float, follow_redirects: bool = True) -> httpx.Client:
+    """创建具备异常代理自愈能力的 HTTP 客户端（默认自动跟随重定向）"""
     normalize_proxy_env()
     try:
-        return httpx.Client(timeout=timeout_seconds)
+        return httpx.Client(timeout=timeout_seconds, follow_redirects=follow_redirects)
     except Exception:
         # 当系统代理协议不兼容或损坏时，安全降级为不读取环境代理直连
-        return httpx.Client(timeout=timeout_seconds, trust_env=False)
+        return httpx.Client(timeout=timeout_seconds, follow_redirects=follow_redirects, trust_env=False)
 
 
 class OpenAICompatibleTranslator(BaseTranslator):
