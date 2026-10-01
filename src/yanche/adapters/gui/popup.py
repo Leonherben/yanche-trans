@@ -1,12 +1,12 @@
 """无焦点桌面划词悬浮窗 (Popup GUI)
 
 严格遵循 agent.md 防焦点窃取规范，确保窗口弹出时绝不中断用户的键盘打字与原窗口活动状态。
-全新双卡片现代设计（原文卡片 + 译文卡片），支持拖拽调整大小 (QSizeGrip) 与坐标锁定 (Pin)。
+支持四角与四边无级自由缩放、QSplitter 原文/译文高度比例调节、一键切换“只显示译文”以及坐标锁定 (Pin)。
 """
 
 from __future__ import annotations
 from typing import Optional, Callable
-from PySide6.QtCore import Qt, QPoint, QTimer, Signal
+from PySide6.QtCore import Qt, QPoint, QTimer, Signal, QEvent, QRect
 from PySide6.QtGui import QCursor, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizeGrip,
+    QSplitter,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -24,6 +25,19 @@ from PySide6.QtWidgets import (
 import pyperclip
 from yanche.core.config import UIConfig
 from yanche.core.models import TranslationResult
+
+RESIZE_MARGIN = 10  # 边缘缩放感应带宽 (像素)
+
+CURSOR_MAP = {
+    "top_left": Qt.CursorShape.SizeFDiagCursor,
+    "bottom_right": Qt.CursorShape.SizeFDiagCursor,
+    "top_right": Qt.CursorShape.SizeBDiagCursor,
+    "bottom_left": Qt.CursorShape.SizeBDiagCursor,
+    "left": Qt.CursorShape.SizeHorCursor,
+    "right": Qt.CursorShape.SizeHorCursor,
+    "top": Qt.CursorShape.SizeVerCursor,
+    "bottom": Qt.CursorShape.SizeVerCursor,
+}
 
 
 class PopupBubble(QWidget):
@@ -55,7 +69,8 @@ class PopupBubble(QWidget):
         self._last_requested_text = ""
         self._current_result: Optional[TranslationResult] = None
 
-        # 固定位置与尺寸状态
+        # 仅显示译文与固定位置状态
+        self._only_translation = getattr(self.config, "only_translation", False)
         self._is_pinned = getattr(self.config, "is_pinned", False)
         if (
             getattr(self.config, "fixed_x", None) is not None
@@ -75,7 +90,12 @@ class PopupBubble(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
+        # 鼠标拖动与多向缩放状态变量
+        self.setMouseTracking(True)
         self._drag_pos = QPoint()
+        self._resize_region: Optional[str] = None
+        self._resize_start_pos = QPoint()
+        self._resize_start_geom: Optional[QRect] = None
 
         # 配置保存防抖定时器
         self._save_timer = QTimer(self)
@@ -111,6 +131,8 @@ class PopupBubble(QWidget):
         # 主卡片外壳容器
         self.container = QFrame(self)
         self.container.setObjectName("main_container")
+        self.container.setMouseTracking(True)
+        self.container.installEventFilter(self)
         self._apply_styles()
 
         container_layout = QVBoxLayout(self.container)
@@ -153,7 +175,7 @@ class PopupBubble(QWidget):
         self.more_btn = QPushButton("⋯", self)
         self.more_btn.setObjectName("action_btn")
         self.more_btn.setFixedSize(26, 26)
-        self.more_btn.setToolTip("更多选项")
+        self.more_btn.setToolTip("更多设置与选项")
         self.more_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.more_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.more_btn.clicked.connect(self._show_more_menu)
@@ -178,19 +200,18 @@ class PopupBubble(QWidget):
         orig_layout.setContentsMargins(10, 8, 10, 8)
         orig_layout.setSpacing(6)
 
-        # 原文可滚动预览区（限制高度，防止超长文本撑破 UI）
+        # 原文预览区（内嵌平滑滚动）
         orig_scroll = QScrollArea(self)
         orig_scroll.setWidgetResizable(True)
         orig_scroll.setFrameShape(QFrame.Shape.NoFrame)
         orig_scroll.setStyleSheet("background: transparent; border: none;")
-        orig_scroll.setMaximumHeight(85)
 
         self.original_label = QLabel(self)
         self.original_label.setObjectName("original_text")
         self.original_label.setWordWrap(True)
         self.original_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         orig_scroll.setWidget(self.original_label)
-        orig_layout.addWidget(orig_scroll)
+        orig_layout.addWidget(orig_scroll, stretch=1)
 
         # 原文卡片底栏：词数统计 + 复制原文
         orig_bottom = QHBoxLayout()
@@ -209,7 +230,6 @@ class PopupBubble(QWidget):
         orig_bottom.addWidget(self.copy_orig_btn)
 
         orig_layout.addLayout(orig_bottom)
-        container_layout.addWidget(self.orig_card)
 
         # ==================== 3. 译文卡片 (Translation Card) ====================
         self.trans_card = QFrame(self)
@@ -247,12 +267,30 @@ class PopupBubble(QWidget):
         trans_bottom.addWidget(self.copy_btn)
 
         trans_layout.addLayout(trans_bottom)
-        container_layout.addWidget(self.trans_card, stretch=1)
 
-        # ==================== 4. 底部右下角缩放手柄 ====================
+        # ==================== 4. 垂直分割器 (QSplitter) ====================
+        self.splitter = QSplitter(Qt.Orientation.Vertical, self)
+        self.splitter.setObjectName("card_splitter")
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.addWidget(self.orig_card)
+        self.splitter.addWidget(self.trans_card)
+
+        # 加载记忆的卡片高度比例
+        saved_sizes = getattr(self.config, "splitter_sizes", [90, 180])
+        if saved_sizes and len(saved_sizes) == 2:
+            self.splitter.setSizes(saved_sizes)
+        self.splitter.splitterMoved.connect(self._on_splitter_moved)
+
+        # 如果开启了“只显示译文”，则隐藏原文卡片
+        if self._only_translation:
+            self.orig_card.hide()
+
+        container_layout.addWidget(self.splitter, stretch=1)
+
+        # ==================== 5. 底部右下角缩放手柄 ====================
         bottom_bar = QHBoxLayout()
         bottom_bar.setContentsMargins(0, 0, 0, 0)
-        self.hint_label = QLabel("Esc 关闭", self)
+        self.hint_label = QLabel("Esc 关闭 · 四角/边缘均可自由缩放", self)
         self.hint_label.setStyleSheet("color: #484f58; font-size: 10px;")
         bottom_bar.addWidget(self.hint_label)
 
@@ -272,7 +310,7 @@ class PopupBubble(QWidget):
         root_layout.addWidget(self.container)
 
     def _apply_styles(self) -> None:
-        """暗黑系极客质感主题"""
+        """暗黑系极客质感主题与可拖动分割线"""
         self.setStyleSheet("""
             QFrame#main_container {
                 background-color: #0d1117;
@@ -365,6 +403,21 @@ class PopupBubble(QWidget):
                 color: #58a6ff;
                 border-color: #58a6ff;
             }
+            QSplitter#card_splitter {
+                background: transparent;
+            }
+            QSplitter#card_splitter::handle:vertical {
+                height: 6px;
+                background-color: transparent;
+                margin: 1px 0px;
+            }
+            QSplitter#card_splitter::handle:vertical:hover {
+                background-color: #388bfd;
+                border-radius: 2px;
+            }
+            QSplitter#card_splitter::handle:vertical:pressed {
+                background-color: #1f6feb;
+            }
             QScrollBar:vertical {
                 border: none;
                 background: transparent;
@@ -440,19 +493,48 @@ class PopupBubble(QWidget):
         self._update_pin_ui()
         self._save_current_config()
 
+    def _toggle_only_translation(self, checked: bool) -> None:
+        """切换是否只显示译文卡片"""
+        self._only_translation = checked
+        self.config.only_translation = checked
+
+        if self._only_translation:
+            self.orig_card.hide()
+            self._flash_status("已切换为：只显示译文")
+        else:
+            self.orig_card.show()
+            saved_sizes = getattr(self.config, "splitter_sizes", [90, 180])
+            if saved_sizes and len(saved_sizes) == 2:
+                self.splitter.setSizes(saved_sizes)
+            self._flash_status("已恢复：显示原文与译文")
+
+        self._save_current_config()
+
+    def _on_splitter_moved(self, pos: int, index: int) -> None:
+        """记录用户拖拽调节的卡片高度比例"""
+        sizes = self.splitter.sizes()
+        if len(sizes) == 2 and sizes[0] > 0 and sizes[1] > 0:
+            self.config.splitter_sizes = sizes
+            self._save_timer.start(500)
+
     def _reset_window_geometry(self) -> None:
-        """重置窗口尺寸与固定位置"""
+        """重置窗口尺寸、分割比例与固定位置"""
         self._is_pinned = False
         self._fixed_pos = None
+        self._only_translation = False
         self.config.is_pinned = False
+        self.config.only_translation = False
         self.config.fixed_x = None
         self.config.fixed_y = None
         self.config.window_width = 450
         self.config.window_height = 320
+        self.config.splitter_sizes = [90, 180]
         self.resize(450, 320)
+        self.orig_card.show()
+        self.splitter.setSizes([90, 180])
         self._update_pin_ui()
         self._save_current_config()
-        self._flash_status("🔄 已恢复默认尺寸与跟随模式")
+        self._flash_status("🔄 已恢复默认尺寸、比例与跟随模式")
 
     def _save_current_config(self) -> None:
         if self.on_save_config:
@@ -501,7 +583,7 @@ class PopupBubble(QWidget):
             self._flash_status("译文已复制 ✔")
 
     def _show_more_menu(self) -> None:
-        """弹出更多选项菜单"""
+        """弹出更多选项设置菜单"""
         menu = QMenu(self)
         menu.setStyleSheet("""
             QMenu {
@@ -527,15 +609,24 @@ class PopupBubble(QWidget):
             }
         """)
 
+        # 1. 钉住/固定
         pin_text = "📍 取消固定 (恢复跟随光标)" if self._is_pinned else "📌 固定在当前位置"
         act_pin = menu.addAction(pin_text)
         act_pin.triggered.connect(self._toggle_pin)
 
-        act_reset = menu.addAction("🔄 恢复默认尺寸与跟随")
-        act_reset.triggered.connect(self._reset_window_geometry)
+        # 2. 只显示译文
+        act_only_trans = menu.addAction("👁️ 只显示译文")
+        act_only_trans.setCheckable(True)
+        act_only_trans.setChecked(self._only_translation)
+        act_only_trans.triggered.connect(self._toggle_only_translation)
 
         menu.addSeparator()
 
+        # 3. 恢复默认尺寸与比例
+        act_reset = menu.addAction("🔄 恢复默认尺寸与比例")
+        act_reset.triggered.connect(self._reset_window_geometry)
+
+        # 4. 清空本地缓存
         if self.on_clear_cache:
             act_cache = menu.addAction("🗑️ 清空本地翻译缓存")
             act_cache.triggered.connect(self._handle_clear_cache)
@@ -665,7 +756,6 @@ class PopupBubble(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        # 记忆用户拖拽调整的宽高并防抖持久化
         min_w = getattr(self.config, "min_width", 360)
         min_h = getattr(self.config, "min_height", 200)
         if self.width() >= min_w and self.height() >= min_h:
@@ -702,21 +792,162 @@ class PopupBubble(QWidget):
 
         self.move(target_x, target_y)
 
+    # ==================== 四角与四边无级自由缩放支持 ====================
+    def _get_resize_region(self, pos: QPoint) -> Optional[str]:
+        """检测鼠标落点是否处于 4 个角落或 4 条边缘感应区内"""
+        w, h = self.width(), self.height()
+        x, y = pos.x(), pos.y()
+        m = RESIZE_MARGIN
+
+        on_left = 0 <= x <= m
+        on_right = (w - m) <= x <= w
+        on_top = 0 <= y <= m
+        on_bottom = (h - m) <= y <= h
+
+        if on_top and on_left:
+            return "top_left"
+        elif on_top and on_right:
+            return "top_right"
+        elif on_bottom and on_left:
+            return "bottom_left"
+        elif on_bottom and on_right:
+            return "bottom_right"
+        elif on_left:
+            return "left"
+        elif on_right:
+            return "right"
+        elif on_top:
+            return "top"
+        elif on_bottom:
+            return "bottom"
+        return None
+
+    def _do_resize(self, cur_pos: QPoint) -> None:
+        """执行四角/边缘无级缩放计算"""
+        if not self._resize_region or not self._resize_start_geom:
+            return
+        dx = cur_pos.x() - self._resize_start_pos.x()
+        dy = cur_pos.y() - self._resize_start_pos.y()
+
+        orig = self._resize_start_geom
+        x, y, w, h = orig.x(), orig.y(), orig.width(), orig.height()
+        min_w = getattr(self.config, "min_width", 360)
+        min_h = getattr(self.config, "min_height", 200)
+
+        # 水平方向计算
+        if "right" in self._resize_region:
+            w = max(min_w, orig.width() + dx)
+        elif "left" in self._resize_region:
+            new_w = max(min_w, orig.width() - dx)
+            x = orig.x() + (orig.width() - new_w)
+            w = new_w
+
+        # 垂直方向计算
+        if "bottom" in self._resize_region:
+            h = max(min_h, orig.height() + dy)
+        elif "top" in self._resize_region:
+            new_h = max(min_h, orig.height() - dy)
+            y = orig.y() + (orig.height() - new_h)
+            h = new_h
+
+        self.setGeometry(x, y, w, h)
+        self.config.window_width = self.width()
+        self.config.window_height = self.height()
+        if self._is_pinned:
+            self._fixed_pos = self.pos()
+            self.config.fixed_x = self.x()
+            self.config.fixed_y = self.y()
+        self._save_timer.start(500)
+
+    def eventFilter(self, watched, event) -> bool:
+        """拦截主卡片外壳事件，支持贴边/贴角的顺滑拉伸缩放"""
+        if watched == self.container:
+            if event.type() == QEvent.Type.MouseMove:
+                pos_in_bubble = self.container.mapTo(self, event.pos())
+                region = self._get_resize_region(pos_in_bubble)
+                if not event.buttons():
+                    if region and region in CURSOR_MAP:
+                        self.setCursor(CURSOR_MAP[region])
+                        self.container.setCursor(CURSOR_MAP[region])
+                    else:
+                        self.unsetCursor()
+                        self.container.unsetCursor()
+                elif event.buttons() == Qt.MouseButton.LeftButton and self._resize_region:
+                    self._do_resize(event.globalPosition().toPoint())
+                    return True
+            elif event.type() == QEvent.Type.MouseButtonPress:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    pos_in_bubble = self.container.mapTo(self, event.pos())
+                    region = self._get_resize_region(pos_in_bubble)
+                    if region:
+                        self._resize_region = region
+                        self._resize_start_pos = event.globalPosition().toPoint()
+                        self._resize_start_geom = self.geometry()
+                        return True
+            elif event.type() == QEvent.Type.MouseButtonRelease:
+                if self._resize_region:
+                    self._resize_region = None
+                    self._resize_start_geom = None
+                    self.unsetCursor()
+                    self.container.unsetCursor()
+                    if self._is_pinned:
+                        self._fixed_pos = self.pos()
+                        self.config.fixed_x = self.x()
+                        self.config.fixed_y = self.y()
+                        self._flash_status("📍 固定位置与尺寸已更新")
+                    self._save_timer.start(500)
+                    return True
+
+        return super().eventFilter(watched, event)
+
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            region = self._get_resize_region(event.pos())
+            if region:
+                self._resize_region = region
+                self._resize_start_pos = event.globalPosition().toPoint()
+                self._resize_start_geom = self.geometry()
+                event.accept()
+                return
+
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event) -> None:
-        if event.buttons() == Qt.MouseButton.LeftButton and not self._drag_pos.isNull():
-            self.move(event.globalPosition().toPoint() - self._drag_pos)
-            event.accept()
+        if event.buttons() == Qt.MouseButton.LeftButton:
+            if self._resize_region:
+                self._do_resize(event.globalPosition().toPoint())
+                event.accept()
+                return
+            elif not self._drag_pos.isNull():
+                self.move(event.globalPosition().toPoint() - self._drag_pos)
+                event.accept()
+                return
+
+        # 无按键悬停更新光标形态
+        region = self._get_resize_region(event.pos())
+        if region and region in CURSOR_MAP:
+            self.setCursor(CURSOR_MAP[region])
+        else:
+            self.unsetCursor()
 
     def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            if self._resize_region:
+                self._resize_region = None
+                self._resize_start_geom = None
+                self.unsetCursor()
+                if self._is_pinned:
+                    self._fixed_pos = self.pos()
+                    self.config.fixed_x = self.x()
+                    self.config.fixed_y = self.y()
+                    self._flash_status("📍 固定位置与尺寸已更新")
+                self._save_timer.start(500)
+                event.accept()
+                return
+
             self._drag_pos = QPoint()
             if self._is_pinned:
-                # 移动后就地锁定新坐标
                 self._fixed_pos = self.pos()
                 self.config.fixed_x = self.x()
                 self.config.fixed_y = self.y()
@@ -733,6 +964,7 @@ class PopupBubble(QWidget):
         """鼠标移出浮窗后若未钉住则重启自动收起"""
         if not self._is_pinned and self.config.auto_hide_seconds > 0:
             self.auto_hide_timer.start(self.config.auto_hide_seconds * 1000)
+        self.unsetCursor()
         super().leaveEvent(event)
 
     def keyPressEvent(self, event) -> None:

@@ -49,6 +49,8 @@ class UIConfig(BaseModel):
     fixed_x: Optional[int] = None    # 固定位置 X 坐标
     fixed_y: Optional[int] = None    # 固定位置 Y 坐标
     is_pinned: bool = False          # 是否记忆固定状态
+    only_translation: bool = False   # 是否只显示译文卡片
+    splitter_sizes: list[int] = Field(default_factory=lambda: [90, 180])  # 原文与译文高度分配
     auto_hide_seconds: int = 8       # 失去交互后自动收起秒数（0表示不自动收起）
     window_opacity: float = 0.98     # 窗口透明度
 

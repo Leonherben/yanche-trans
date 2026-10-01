@@ -225,3 +225,67 @@ def test_popup_reset_window_geometry(qapp):
     assert len(saved) >= 1
     popup.close()
 
+
+def test_popup_splitter_and_only_translation(qapp):
+    config = UIConfig(splitter_sizes=[120, 200], only_translation=False)
+    saved = []
+    popup = PopupBubble(config, on_save_config=lambda: saved.append(True))
+    popup.show()
+
+    # 1. 验证垂直分割器与子控件
+    assert hasattr(popup, "splitter")
+    assert popup.orig_card.isVisible()
+    assert popup.trans_card.isVisible()
+
+    # 2. 模拟拖拽分割线改变高度分配比例
+    popup.splitter.setSizes([80, 240])
+    popup._on_splitter_moved(80, 1)
+    assert popup.config.splitter_sizes == popup.splitter.sizes()
+
+    # 3. 切换为“只显示译文”
+    popup._toggle_only_translation(True)
+    assert popup._only_translation
+    assert popup.config.only_translation
+    assert not popup.orig_card.isVisible()
+    assert popup.trans_card.isVisible()
+
+    # 4. 再次切换为显示原文与译文
+    popup._toggle_only_translation(False)
+    assert not popup._only_translation
+    assert not popup.config.only_translation
+    assert popup.orig_card.isVisible()
+    popup.close()
+
+
+def test_popup_four_corner_resize_regions(qapp):
+    from PySide6.QtCore import QPoint, QRect
+    config = UIConfig(window_width=400, window_height=300)
+    popup = PopupBubble(config)
+    popup.resize(400, 300)
+
+    # 验证四个角落的感应区域识别
+    assert popup._get_resize_region(QPoint(2, 2)) == "top_left"
+    assert popup._get_resize_region(QPoint(398, 2)) == "top_right"
+    assert popup._get_resize_region(QPoint(2, 298)) == "bottom_left"
+    assert popup._get_resize_region(QPoint(398, 298)) == "bottom_right"
+
+    # 验证四条边缘的感应区域识别
+    assert popup._get_resize_region(QPoint(2, 150)) == "left"
+    assert popup._get_resize_region(QPoint(398, 150)) == "right"
+    assert popup._get_resize_region(QPoint(200, 2)) == "top"
+    assert popup._get_resize_region(QPoint(200, 298)) == "bottom"
+
+    # 验证窗口中心区域不触发缩放
+    assert popup._get_resize_region(QPoint(200, 150)) is None
+
+    # 验证右下角拖拽拉伸逻辑
+    popup._resize_region = "bottom_right"
+    popup._resize_start_pos = QPoint(500, 500)
+    popup._resize_start_geom = QRect(100, 100, 400, 300)
+    popup._do_resize(QPoint(550, 560))
+    assert popup.width() == 450
+    assert popup.height() == 360
+
+    popup.close()
+
+
