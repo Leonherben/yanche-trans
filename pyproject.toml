@@ -16,6 +16,11 @@ dependencies = [
     "socksio>=1.0.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Leonherben/yanxi-trans"
+Repository = "https://github.com/Leonherben/yanxi-trans"
+Issues = "https://github.com/Leonherben/yanxi-trans/issues"
+
 [project.scripts]
 yanxi = "yanche:main"
 yanxi-cli = "yanche.cli.main:main"

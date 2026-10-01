@@ -1,145 +1,127 @@
-# 言蹊翻译 跨平台智能划词翻译软件 (Linux & Windows)
+# 言蹊翻译 (YanXi Trans)
 
-> 基于 Python 3.12 + PySide6 构建的轻量级、无焦点窃取的桌面划词翻译工具，深度聚合 OpenAI 兼容大模型 API 与传统翻译服务。
+轻量、极速的跨平台桌面划词翻译工具，支持 Linux (X11) 与 Windows。
 
----
-
-## 🌟 核心特性
-
-1. **🧠 大脑与外壳彻底解耦 (Core-Adapter Decoupling)**：
-   - 核心层包含领域模型、统一翻译接口契约与本地 SQLite 高性能缓存，纯粹独立，无任何 GUI 或平台 API 依赖；
-   - 适配层负责 Linux X11 Primary 选区监听、Windows 全局热键捕获与 PySide6 现代悬浮窗渲染。
-2. **🛡️ 悬浮窗焦点防窃取 (Focus Stealing Prevention)**：
-   - 严格遵循 `agent.md` 规范，采用 `Qt.WindowType.ToolTip | WindowDoesNotAcceptFocus` 属性，无论在终端敲命令、浏览器表单输入还是 IDE 编写代码，划词弹出浮窗时**绝不抢占键盘输入焦点**，打字永不中断。
-3. **⚡ 跨平台无感划词体验**：
-   - **Linux (X11)**：基于 Primary Selection，鼠标选中文本松开即刻弹出，无需按键，不污染系统剪贴板；
-   - **Windows / 通用**：支持按下全局热键（默认 `<ctrl>+<alt>+t`）自动提取，带有剪贴板保全机制，取词完成后自动恢复用户原有剪贴板数据。
-4. **💾 本地零延迟缓存 (SQLite Cache)**：
-   - 翻译结果自动进行 SHA256 紧凑指纹归一化缓存，相同词句 0ms 秒开，省时省 API 资费。
-5. **🚨 紧急逃生通道 (Panic Failsafe)**：
-   - 内置全局最高优先级逃生键（`<ctrl>+<alt>+<esc>`），触发后瞬间注销所有底层钩子并安全退出，保障系统稳定。
-6. **🪶 极轻量资源占用**：
-   - 适配 8GB 物理内存环境，待机内存仅 ~35MB，空闲 CPU 占用 0%。
+名称取自“桃李不言，下自成蹊”。默认内置免费微软翻译（无需注册任何账号或申请 API 密钥，开箱即用），同时支持接入 DeepSeek、OpenAI、智谱 GLM、本地 Ollama 等大模型。悬浮窗采用无焦点置顶设计，划词查词时不会抢占键盘输入焦点，不影响写代码、敲终端命令或日常打字。
 
 ---
 
-## 📦 软件下载 (Download & Releases)
+## 主要功能
 
-用户无需安装 Python 或任何开发环境，直接下载解压即可运行：
+- **免配置开箱即用**：默认内置微软翻译服务，下载即可直接使用，无需任何前置 API 配置。
+- **聚合多翻译源**：支持在悬浮窗左上角下拉菜单秒级切换翻译引擎，包括微软翻译、DeepSeek、OpenAI、智谱 GLM 与本地 Ollama（Qwen 等）。
+- **无焦点悬浮窗**：翻译气泡弹出时绝不抢占键盘焦点，正在进行的文本输入与光标位置不中断。
+- **灵活取词方式**：
+  - **快捷键取词**：选中文本后按下 `Alt + D` 即可翻译，支持在配置文件中设置多个备用快捷键（如 `Alt + Q`）。
+  - **鼠标侧键取词**：支持鼠标前后侧键一键触发划词翻译。
+  - **自动划词翻译**：选中文本松开鼠标左键自动弹出翻译（可在托盘菜单随时开启或关闭）。
+  - **手动查词框**：未选词时按下快捷键，或双击系统托盘图标，均可呼出输入框手动查词。
+- **悬浮窗实用特性**：
+  - **固定位置 (Pin)**：可将悬浮窗固定在屏幕任意坐标，后续查词直接在固定位置显示。
+  - **纯译文模式**：支持隐藏原文仅展示译文，视觉更清爽。
+  - **统计与耗时**：实时展示单词数、字符数以及翻译请求的毫秒耗时。
+  - **透明度调节**：支持在托盘中按百分比调节窗口透明度（40% ~ 100%）。
+  - **多主题适配**：提供亮色（Light）、暗黑（Dark）与毛玻璃（Glass）三套现代主题。
+  - **快捷收起**：按下 `Esc` 键或点击悬浮窗外部空白区域即可收起窗口。
+- **离线本地缓存**：内置 SQLite 缓存，相同词句 0ms 秒级响应，节省大模型 API 资费与网络开销。
+- **终端命令行工具**：提供 `yanxi-cli`，支持在终端中快速查词与交互式翻译。
 
-👉 **前往 [GitHub Releases 最新发布页](https://github.com/Leonherben/yanche-trans/releases) 下载**
+---
 
-| 操作系统 | 下载文件格式 | 安装与使用说明 |
+## 软件下载
+
+各平台独立运行包已预编译打包，无需安装 Python 环境，解压即可运行：
+
+👉 **前往 [GitHub Releases](https://github.com/Leonherben/yanxi-trans/releases) 下载最新版本**
+
+| 平台 | 下载文件 | 使用说明 |
 | :--- | :--- | :--- |
-| **Windows** (Win10 / Win11) | `yanxi-v*-windows-x86_64.zip` | 解压至任意文件夹，双击 `启动言蹊翻译.bat` 或 `yanxi.exe` 即可直接常驻系统托盘（绿色便携，无控制台黑框） |
-| **Linux** (Mint / Ubuntu / Debian 等) | `yanxi-v*-linux-x86_64.tar.gz` | 解压后直接运行 `./install.sh` 即可一键安装到系统菜单，或在解压目录下直接运行 `./yanxi` |
+| **Windows** (Win10 / Win11) | `yanxi-v*-windows-x86_64.zip` | 解压后双击 `启动言蹊翻译.bat` 或 `yanxi.exe` 即可（绿色免安装，无控制台黑框后台常驻） |
+| **Linux** (Mint / Ubuntu / Debian 等) | `yanxi-v*-linux-x86_64.tar.gz` | 解压后直接运行 `./install.sh` 安装到系统应用程序菜单，或直接运行 `./yanxi` |
 
 ---
 
-## 🛠️ 源码开发与构建
+## 常用操作与快捷键
 
-本项目严格采用现代工具链 `uv` 纳管虚拟环境。
+| 操作 / 快捷键 | 功能 | 说明 |
+| :--- | :--- | :--- |
+| `Alt + D` | 划词翻译 / 打开查词框 | 选中文本时触发翻译；未选词时呼出手动查词框 |
+| 鼠标前后侧键 | 划词翻译 | 支持大部分带有侧键的鼠标 |
+| 鼠标划选松开 | 划选自动翻译 | 可在托盘菜单勾选“划选自动翻译”启用 |
+| 双击托盘图标 | 打开查词框 | 快速手动输入翻译内容 |
+| `Esc` | 收起翻译悬浮窗 | 悬浮窗显示时有效 |
+| `Ctrl + Alt + Escape` | 紧急退出程序 | 后台守护进程异常时的全局强制退出键 |
 
-### 0. 系统级前置依赖 (Linux 专属)
-Linux 桌面环境原生划词取词与 Qt6 XCB 底层依赖以下支持包：
+---
+
+## 服务配置与 API Key
+
+配置文件路径：
+- **Linux**：`~/.config/yanche/config.json`
+- **Windows**：`%APPDATA%/yanche/config.json`
+
+默认无需修改任何配置即可使用微软翻译。若需使用 DeepSeek 或 OpenAI 等大语言模型，可通过命令行或直接编辑配置文件设置 API Key：
+
 ```bash
+# 配置 DeepSeek API Key
+yanxi-cli --set-key deepseek sk-your-deepseek-api-key
+
+# 配置 OpenAI API Key
+yanxi-cli --set-key openai sk-your-openai-api-key
+
+# 配置 智谱 GLM API Key
+yanxi-cli --set-key zhipu your-zhipu-api-key
+
+# 查看所有已配置的提供商状态
+yanxi-cli --list-providers
+```
+
+---
+
+## 命令行用法 (yanxi-cli)
+
+```bash
+# 单次翻译文本
+yanxi-cli "Standing on the shoulders of giants."
+
+# 指定源语言与目标语言（如翻译为日语）
+yanxi-cli "Good morning!" -t ja
+
+# 指定使用的翻译引擎
+yanxi-cli "Hello world" -p deepseek
+
+# 进入终端交互式翻译模式
+yanxi-cli -i
+```
+
+---
+
+## 源码运行与开发
+
+本项目推荐使用 [uv](https://github.com/astral-sh/uv) 管理 Python 虚拟环境与依赖（Python 3.12+）：
+
+```bash
+# 1. Linux 前置依赖 (Linux 专属，用于 X11 取词)
 sudo apt update && sudo apt install -y xsel libxcb-cursor0
-```
 
-### 1. 安装项目依赖与环境构建
-```bash
-# 自动创建 .venv 并安装所有 Python 依赖
+# 2. 安装 Python 依赖
 uv sync
-```
 
-### 2. 配置翻译 API Key
-言蹊翻译 原生支持所有兼容 OpenAI 规范的提供商（DeepSeek、智谱 GLM、OpenAI、Moonshot/Kimi、Ollama 本地大模型等）。
+# 3. 运行 GUI 划词主程序
+uv run yanxi
 
-可以通过命令行快速配置 API 密钥：
-```bash
-# 配置 DeepSeek Key
-uv run yanche-cli --set-key deepseek sk-your-deepseek-api-key
+# 4. 运行命令行查词工具
+uv run yanxi-cli "Hello world"
 
-# 或配置 OpenAI Key
-uv run yanche-cli --set-key openai sk-your-openai-api-key
+# 5. 执行单元测试
+uv run pytest
 
-# 或配置 智谱 GLM Key
-uv run yanche-cli --set-key zhipu your-zhipu-api-key
-```
-配置文件将持久化存储于 `~/.config/yanche/config.json`（Linux）或 `%APPDATA%/yanche/config.json`（Windows）。
-
-### 3. 测试 API 连通性
-```bash
-uv run yanche-cli --test
-```
-
-### 4. 运行终端 CLI 翻译
-```bash
-# 单次快速翻译
-uv run yanche-cli "Artificial Intelligence is reshaping software development."
-
-# 指定目标语言（如日语）
-uv run yanche-cli "Good morning!" -t ja
-
-# 进入终端交互模式
-uv run yanche-cli -i
-```
-
-### 5. 启动桌面常驻划词服务 (GUI + 托盘)
-```bash
-uv run yanche
-```
-启动后：
-- 屏幕右下角任务栏出现托盘图标；
-- 鼠标在任意文本中划选，松开后即可在鼠标旁弹出悬浮卡片；
-- 支持点击“📌”固定浮窗、点击“复制译文”快速复制、按 `Esc` 快捷隐藏；
-- 遇到任何异常，可随时按下 `Ctrl + Alt + Escape` 紧急安全退出。
-
----
-
-## 🛠️ 常用快捷键
-
-| 快捷键 | 功能 | 说明 |
-| :--- | :--- | :--- |
-| **鼠标左键划词松开** | 触发自动翻译 | Linux X11 原生支持，零按键 |
-| `Ctrl + Alt + T` | 通用划词/剪贴板翻译 | 跨平台全局热键模式 |
-| `Esc` | 关闭当前翻译浮窗 | 浮窗打开时有效 |
-| `Ctrl + Alt + Escape` | **紧急逃生键 (Panic Exit)** | 强制注销钩子并关闭程序 |
-
----
-
-## 📁 目录结构
-
-```text
-├── agent.md                    # 最高工程规范守则
-├── docs/
-│   ├── architecture.md         # 架构设计与领域模型规范
-│   └── interaction.md          # 划词交互、防焦点抢占时序规范
-├── src/yanche/
-│   ├── core/                   # 纯业务核心层
-│   │   ├── models.py           # 翻译请求/响应实体
-│   │   ├── config.py           # 跨平台配置持久化
-│   │   ├── translator/         # 翻译引擎抽象与 OpenAI 协议实现
-│   │   └── cache/              # SQLite 本地缓存引擎
-│   ├── adapters/               # 平台与界面适配层
-│   │   ├── gui/                # PySide6 悬浮窗与系统托盘
-│   │   └── selection/          # Linux X11 原生与通用热键取词器
-│   ├── cli/                    # CLI 原型工具
-│   └── main.py                 # 全局常驻守护进程与主入口
-├── tests/                      # 自动化测试套件与沙盒
-│   ├── test_translator.py      # 网络与翻译逻辑 Mock 单测
-│   ├── test_cache.py           # 本地 SQLite 缓存单测
-│   ├── test_selection.py       # 划词文本过滤单测
-│   ├── test_cli.py             # CLI 命令行单测
-│   └── sandbox_gui.py          # 桌面无焦点浮窗独立沙盒
-└── pyproject.toml              # uv 项目依赖与入口声明
+# 6. 本地打包构建独立发布包
+uv run python scripts/build.py
 ```
 
 ---
 
-## 🧪 自动化测试
+## 开源协议
 
-运行全量单元测试套件：
-```bash
-uv run pytest tests/ -v
-```
+本项目采用 MIT 协议开源。
