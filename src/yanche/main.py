@@ -65,6 +65,8 @@ class 言澈翻译App(QObject):
             on_toggle_listener=self.set_listener_enabled,
             on_provider_change=self.set_provider,
             on_target_lang_change=self.set_target_lang,
+            on_theme_change=lambda t: self.popup.apply_theme(theme_name=t),
+            on_opacity_change=lambda o: self.popup.apply_theme(opacity=o),
             on_clear_cache=self.cache.clear,
             on_quit=self.shutdown,
         )

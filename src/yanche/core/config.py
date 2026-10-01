@@ -40,7 +40,7 @@ class SelectionConfig(BaseModel):
 
 class UIConfig(BaseModel):
     """悬浮窗 UI 配置"""
-    theme: str = "dark"              # dark | light | auto
+    theme: str = "auto"              # auto | dark | light | glass (默认跟随系统)
     font_size: int = 13              # 字号
     min_width: int = 360             # 最小宽度
     min_height: int = 200            # 最小高度
@@ -52,7 +52,7 @@ class UIConfig(BaseModel):
     only_translation: bool = False   # 是否只显示译文卡片
     splitter_sizes: list[int] = Field(default_factory=lambda: [90, 180])  # 原文与译文高度分配
     auto_hide_seconds: int = 8       # 失去交互后自动收起秒数（0表示不自动收起）
-    window_opacity: float = 0.98     # 窗口透明度
+    window_opacity: float = 0.95     # 窗口透明度 (0.4 ~ 1.0)
 
 
 def _default_providers() -> Dict[str, ProviderConfig]:

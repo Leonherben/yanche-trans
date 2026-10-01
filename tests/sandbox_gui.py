@@ -78,6 +78,17 @@ class SandboxWindow(QMainWindow):
         btn_bar.addWidget(err_btn)
 
         layout.addLayout(btn_bar)
+
+        theme_bar = QHBoxLayout()
+        theme_label = QLabel("🎨 主题快速切换:", self)
+        theme_bar.addWidget(theme_label)
+
+        for code, label in [("auto", "跟随系统"), ("dark", "🌙 深色"), ("light", "☀️ 浅色"), ("glass", "🪟 玻璃")]:
+            btn = QPushButton(label, self)
+            btn.clicked.connect(lambda checked, t=code: self.popup.apply_theme(theme_name=t))
+            theme_bar.addWidget(btn)
+
+        layout.addLayout(theme_bar)
         self.setCentralWidget(central)
 
     def _get_target_pos(self) -> tuple[int, int]:

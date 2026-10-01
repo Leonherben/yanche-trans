@@ -1,7 +1,8 @@
 """无焦点桌面划词悬浮窗 (Popup GUI)
 
 严格遵循 agent.md 防焦点窃取规范，确保窗口弹出时绝不中断用户的键盘打字与原窗口活动状态。
-支持四角与四边无级自由缩放、QSplitter 原文/译文高度比例调节、一键切换“只显示译文”以及坐标锁定 (Pin)。
+支持四角与四边无级自由缩放、QSplitter 原文/译文高度比例调节、一键切换“只显示译文”、
+多主题切换（Dark/Light/Glass/Auto跟随系统）以及自定义透明度调节。
 """
 
 from __future__ import annotations
@@ -25,6 +26,13 @@ from PySide6.QtWidgets import (
 import pyperclip
 from yanche.core.config import UIConfig
 from yanche.core.models import TranslationResult
+from yanche.adapters.gui.theme import (
+    AVAILABLE_THEMES,
+    AVAILABLE_OPACITIES,
+    get_effective_theme,
+    get_theme_stylesheet,
+    get_theme_menu_style,
+)
 
 RESIZE_MARGIN = 10  # 边缘缩放感应带宽 (像素)
 
@@ -41,7 +49,7 @@ CURSOR_MAP = {
 
 
 class PopupBubble(QWidget):
-    """防焦点窃取的高颜值双卡片悬浮翻译气泡窗口"""
+    """防焦点窃取的高颜值多主题悬浮翻译气泡窗口"""
 
     # 异步触发信号（线程安全）
     show_translation_signal = Signal(object)
@@ -68,6 +76,10 @@ class PopupBubble(QWidget):
         self._current_provider = "deepseek"
         self._last_requested_text = ""
         self._current_result: Optional[TranslationResult] = None
+
+        # 主题与透明度状态
+        self._theme = getattr(self.config, "theme", "auto")
+        self._opacity = getattr(self.config, "window_opacity", 0.95)
 
         # 仅显示译文与固定位置状态
         self._only_translation = getattr(self.config, "only_translation", False)
@@ -113,6 +125,14 @@ class PopupBubble(QWidget):
         if self._is_pinned and self._fixed_pos is not None:
             self.move(self._fixed_pos)
 
+        # 监听系统明暗主题切换信号（当主题设为跟随系统时实时热重载）
+        app = QGuiApplication.instance()
+        if app:
+            try:
+                app.styleHints().colorSchemeChanged.connect(self._on_system_color_scheme_changed)
+            except Exception:
+                pass
+
         # 绑定跨线程/异步信号
         self.show_translation_signal.connect(self.display_result)
         self.show_loading_signal.connect(self.display_loading)
@@ -133,7 +153,6 @@ class PopupBubble(QWidget):
         self.container.setObjectName("main_container")
         self.container.setMouseTracking(True)
         self.container.installEventFilter(self)
-        self._apply_styles()
 
         container_layout = QVBoxLayout(self.container)
         container_layout.setContentsMargins(12, 10, 12, 8)
@@ -169,13 +188,12 @@ class PopupBubble(QWidget):
         self.pin_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.pin_btn.clicked.connect(self._toggle_pin)
         top_bar.addWidget(self.pin_btn)
-        self._update_pin_ui()
 
         # 更多操作菜单按钮
         self.more_btn = QPushButton("⋯", self)
         self.more_btn.setObjectName("action_btn")
         self.more_btn.setFixedSize(26, 26)
-        self.more_btn.setToolTip("更多设置与选项")
+        self.more_btn.setToolTip("更多设置与选项 (主题/透明度)")
         self.more_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.more_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.more_btn.clicked.connect(self._show_more_menu)
@@ -281,7 +299,6 @@ class PopupBubble(QWidget):
             self.splitter.setSizes(saved_sizes)
         self.splitter.splitterMoved.connect(self._on_splitter_moved)
 
-        # 如果开启了“只显示译文”，则隐藏原文卡片
         if self._only_translation:
             self.orig_card.hide()
 
@@ -291,7 +308,7 @@ class PopupBubble(QWidget):
         bottom_bar = QHBoxLayout()
         bottom_bar.setContentsMargins(0, 0, 0, 0)
         self.hint_label = QLabel("Esc 关闭 · 四角/边缘均可自由缩放", self)
-        self.hint_label.setStyleSheet("color: #484f58; font-size: 10px;")
+        self.hint_label.setStyleSheet("color: #6e7681; font-size: 10px;")
         bottom_bar.addWidget(self.hint_label)
 
         bottom_bar.addStretch()
@@ -309,141 +326,34 @@ class PopupBubble(QWidget):
         root_layout.setContentsMargins(4, 4, 4, 4)
         root_layout.addWidget(self.container)
 
-    def _apply_styles(self) -> None:
-        """暗黑系极客质感主题与可拖动分割线"""
-        self.setStyleSheet("""
-            QFrame#main_container {
-                background-color: #0d1117;
-                border: 1px solid #30363d;
-                border-radius: 10px;
-            }
-            QLabel#brand_badge {
-                color: #58a6ff;
-                font-weight: bold;
-                font-size: 12px;
-                padding: 1px 4px;
-            }
-            QPushButton#provider_btn {
-                color: #c9d1d9;
-                font-weight: 500;
-                font-size: 11px;
-                background-color: #161b22;
-                border: 1px solid #30363d;
-                border-radius: 11px;
-                padding: 2px 10px;
-            }
-            QPushButton#provider_btn:hover {
-                background-color: #21262d;
-                border-color: #58a6ff;
-                color: #58a6ff;
-            }
-            QPushButton#action_btn {
-                background-color: transparent;
-                border: none;
-                color: #8b949e;
-                font-size: 13px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton#action_btn:hover {
-                background-color: #21262d;
-                color: #c9d1d9;
-            }
-            QPushButton#close_btn {
-                background-color: transparent;
-                border: none;
-                color: #8b949e;
-                font-size: 12px;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton#close_btn:hover {
-                background-color: rgba(248, 81, 73, 0.2);
-                color: #f85149;
-            }
-            QFrame#card_frame {
-                background-color: #161b22;
-                border: 1px solid #21262d;
-                border-radius: 8px;
-            }
-            QLabel#original_text {
-                color: #8b949e;
-                font-size: 12px;
-                line-height: 1.4;
-                background: transparent;
-            }
-            QPushButton#subtle_btn {
-                background: transparent;
-                border: none;
-                color: #8b949e;
-                font-size: 10px;
-                padding: 1px 4px;
-            }
-            QPushButton#subtle_btn:hover {
-                color: #58a6ff;
-            }
-            QTextBrowser#trans_browser {
-                background: transparent;
-                border: none;
-                color: #e6edf3;
-                font-size: 13px;
-                selection-background-color: #1f6feb;
-                selection-color: #ffffff;
-            }
-            QPushButton#action_btn_primary {
-                background-color: #21262d;
-                color: #c9d1d9;
-                border: 1px solid #30363d;
-                border-radius: 4px;
-                padding: 2px 8px;
-                font-size: 11px;
-            }
-            QPushButton#action_btn_primary:hover {
-                background-color: #30363d;
-                color: #58a6ff;
-                border-color: #58a6ff;
-            }
-            QSplitter#card_splitter {
-                background: transparent;
-            }
-            QSplitter#card_splitter::handle:vertical {
-                height: 6px;
-                background-color: transparent;
-                margin: 1px 0px;
-            }
-            QSplitter#card_splitter::handle:vertical:hover {
-                background-color: #388bfd;
-                border-radius: 2px;
-            }
-            QSplitter#card_splitter::handle:vertical:pressed {
-                background-color: #1f6feb;
-            }
-            QScrollBar:vertical {
-                border: none;
-                background: transparent;
-                width: 6px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #30363d;
-                min-height: 20px;
-                border-radius: 3px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #58a6ff;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-            QSizeGrip {
-                background: transparent;
-                width: 14px;
-                height: 14px;
-            }
-        """)
+        # 应用主题与透明度
+        self.apply_theme(self._theme, self._opacity)
+
+    def apply_theme(self, theme_name: Optional[str] = None, opacity: Optional[float] = None) -> None:
+        """动态应用主题与透明度"""
+        if theme_name is not None:
+            self._theme = theme_name
+            self.config.theme = theme_name
+        if opacity is not None:
+            self._opacity = max(0.4, min(1.0, opacity))
+            self.config.window_opacity = self._opacity
+
+        effective = get_effective_theme(self._theme)
+        qss = get_theme_stylesheet(effective)
+        self.setStyleSheet(qss)
+        self.setWindowOpacity(self._opacity)
+
+        self._update_pin_ui()
+        self._save_current_config()
+
+    def _on_system_color_scheme_changed(self) -> None:
+        """系统主题明暗切换时触发热重载"""
+        if self._theme == "auto":
+            self.apply_theme("auto")
 
     def _update_pin_ui(self) -> None:
-        """根据当前固定状态刷新图钉按钮外观"""
+        """根据当前固定状态与主题刷新图钉按钮外观"""
+        effective = get_effective_theme(self._theme)
         if self._is_pinned:
             self.pin_btn.setText("📍")
             self.pin_btn.setToolTip("浮窗已固定在此位置（点击取消固定，恢复跟随光标）")
@@ -459,16 +369,17 @@ class PopupBubble(QWidget):
         else:
             self.pin_btn.setText("📌")
             self.pin_btn.setToolTip("固定浮窗位置（选词时保持在固定坐标，不跟随光标）")
-            self.pin_btn.setStyleSheet("""
-                QPushButton#pin_btn {
+            hover_bg = "#eaeef2" if effective == "light" else "rgba(255, 255, 255, 0.12)"
+            self.pin_btn.setStyleSheet(f"""
+                QPushButton#pin_btn {{
                     background-color: transparent;
                     border: none;
                     font-size: 12px;
                     border-radius: 4px;
-                }
-                QPushButton#pin_btn:hover {
-                    background-color: #21262d;
-                }
+                }}
+                QPushButton#pin_btn:hover {{
+                    background-color: {hover_bg};
+                }}
             """)
 
     def _toggle_pin(self) -> None:
@@ -583,31 +494,10 @@ class PopupBubble(QWidget):
             self._flash_status("译文已复制 ✔")
 
     def _show_more_menu(self) -> None:
-        """弹出更多选项设置菜单"""
+        """弹出更多选项设置菜单 (集成主题与透明度)"""
+        effective = get_effective_theme(self._theme)
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #161b22;
-                color: #e6edf3;
-                border: 1px solid #30363d;
-                border-radius: 8px;
-                padding: 4px;
-                font-size: 12px;
-            }
-            QMenu::item {
-                padding: 6px 18px 6px 12px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #1f6feb;
-                color: #ffffff;
-            }
-            QMenu::separator {
-                height: 1px;
-                background-color: #30363d;
-                margin: 4px 6px;
-            }
-        """)
+        menu.setStyleSheet(get_theme_menu_style(effective))
 
         # 1. 钉住/固定
         pin_text = "📍 取消固定 (恢复跟随光标)" if self._is_pinned else "📌 固定在当前位置"
@@ -622,17 +512,46 @@ class PopupBubble(QWidget):
 
         menu.addSeparator()
 
-        # 3. 恢复默认尺寸与比例
+        # 3. 🎨 主题风格子菜单
+        theme_menu = menu.addMenu("🎨 主题风格")
+        theme_menu.setStyleSheet(get_theme_menu_style(effective))
+        for code, name in AVAILABLE_THEMES:
+            is_curr = (self._theme == code)
+            mark = "✔ " if is_curr else "   "
+            act = theme_menu.addAction(f"{mark}{name}")
+            act.triggered.connect(lambda checked, t=code: self._handle_theme_change(t))
+
+        # 4. 🪟 窗口透明度子菜单
+        opacity_menu = menu.addMenu("🪟 窗口透明度")
+        opacity_menu.setStyleSheet(get_theme_menu_style(effective))
+        for val, label in AVAILABLE_OPACITIES:
+            is_curr = abs(self._opacity - val) < 0.03
+            mark = "✔ " if is_curr else "   "
+            act = opacity_menu.addAction(f"{mark}{label}")
+            act.triggered.connect(lambda checked, o=val: self._handle_opacity_change(o))
+
+        menu.addSeparator()
+
+        # 5. 恢复默认尺寸与比例
         act_reset = menu.addAction("🔄 恢复默认尺寸与比例")
         act_reset.triggered.connect(self._reset_window_geometry)
 
-        # 4. 清空本地缓存
+        # 6. 清空本地缓存
         if self.on_clear_cache:
             act_cache = menu.addAction("🗑️ 清空本地翻译缓存")
             act_cache.triggered.connect(self._handle_clear_cache)
 
         pos = self.more_btn.mapToGlobal(QPoint(0, self.more_btn.height() + 2))
         menu.exec(pos)
+
+    def _handle_theme_change(self, theme_code: str) -> None:
+        self.apply_theme(theme_name=theme_code)
+        name_map = dict(AVAILABLE_THEMES)
+        self._flash_status(f"主题已切换为：{name_map.get(theme_code, theme_code)}")
+
+    def _handle_opacity_change(self, opacity: float) -> None:
+        self.apply_theme(opacity=opacity)
+        self._flash_status(f"透明度已设为：{int(opacity * 100)}%")
 
     def _handle_clear_cache(self) -> None:
         if self.on_clear_cache:
@@ -641,25 +560,9 @@ class PopupBubble(QWidget):
 
     def _show_provider_menu(self) -> None:
         """点击浮窗左上角小图标，弹出可供选择的翻译引擎菜单"""
+        effective = get_effective_theme(self._theme)
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #161b22;
-                color: #e6edf3;
-                border: 1px solid #30363d;
-                border-radius: 6px;
-                padding: 4px;
-                font-size: 12px;
-            }
-            QMenu::item {
-                padding: 4px 16px 4px 10px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #1f6feb;
-                color: #ffffff;
-            }
-        """)
+        menu.setStyleSheet(get_theme_menu_style(effective))
 
         curr = self._current_provider
         for p in self.available_providers:
@@ -688,8 +591,11 @@ class PopupBubble(QWidget):
 
         self.original_label.setText(text)
         self.orig_meta_label.setText(self._format_meta(text))
+
+        effective = get_effective_theme(self._theme)
+        loading_color = "#57606a" if effective == "light" else "#8b949e"
         self.text_browser.setHtml(
-            "<span style='color: #8b949e; font-style: italic;'>正在向 API 请求译文...</span>"
+            f"<span style='color: {loading_color}; font-style: italic;'>正在向 API 请求译文...</span>"
         )
 
         if self._is_pinned and self._fixed_pos is not None:
