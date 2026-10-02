@@ -6,8 +6,14 @@
 """
 
 from __future__ import annotations
+import re
 from html import escape
 from typing import Optional, Callable, List
+
+
+def _has_english_text(text: str) -> bool:
+    """判断文本中是否包含英文字符（含英文才显示英/美发音按钮，纯中文隐藏）"""
+    return bool(re.search(r"[a-zA-Z]", text))
 from PySide6.QtCore import Qt, QPoint, QTimer, Signal, QEvent, QRect
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QKeyEvent, QTextCursor, QPainter, QPen
 
@@ -53,6 +59,7 @@ from yanxi.adapters.gui.providers import provider_label, provider_menu_label, ad
 from yanxi.adapters.gui.selection_modes import MODE_LABELS, MODE_DESCRIPTIONS, add_mode_actions
 from yanxi.adapters.gui.languages import language_label, add_language_actions
 from yanxi.core.models import TranslationResult
+from yanxi.adapters.gui.audio_player import AudioPlayer
 from yanxi.adapters.gui.theme import (
     AVAILABLE_THEMES,
     get_effective_theme,
@@ -720,6 +727,12 @@ class PopupBubble(QWidget):
         self.show_loading_signal.connect(self.display_loading)
         self.dismiss_signal.connect(self.dismiss_if_outside)
 
+        # 发音与音频播放模块
+        self.audio_player = AudioPlayer(parent=self)
+        self.audio_player.playback_started.connect(self._on_audio_playback_started)
+        self.audio_player.playback_finished.connect(self._on_audio_playback_finished)
+        self.audio_player.playback_failed.connect(self._on_audio_playback_failed)
+
     def _init_ui(self) -> None:
         min_w = getattr(self.config, "min_width", 360)
         min_h = getattr(self.config, "min_height", 200)
@@ -842,6 +855,24 @@ class PopupBubble(QWidget):
 
         orig_bottom.addStretch()
 
+        self.tts_uk_btn = QPushButton("英 🔊", self)
+        self.tts_uk_btn.setObjectName("subtle_btn")
+        self.tts_uk_btn.setToolTip("英式发音 (UK)")
+        self.tts_uk_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.tts_uk_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tts_uk_btn.clicked.connect(lambda: self._play_original_audio("uk"))
+        self.tts_uk_btn.hide()
+        orig_bottom.addWidget(self.tts_uk_btn)
+
+        self.tts_us_btn = QPushButton("美 🔊", self)
+        self.tts_us_btn.setObjectName("subtle_btn")
+        self.tts_us_btn.setToolTip("美式发音 (US)")
+        self.tts_us_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.tts_us_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tts_us_btn.clicked.connect(lambda: self._play_original_audio("us"))
+        self.tts_us_btn.hide()
+        orig_bottom.addWidget(self.tts_us_btn)
+
         self.clear_orig_btn = QPushButton("清空", self)
         self.clear_orig_btn.setObjectName("subtle_btn")
         self.clear_orig_btn.setToolTip("清空输入内容")
@@ -904,6 +935,24 @@ class PopupBubble(QWidget):
         trans_bottom.addWidget(self.status_msg)
 
         trans_bottom.addStretch()
+
+        self.trans_tts_uk_btn = QPushButton("英 🔊", self)
+        self.trans_tts_uk_btn.setObjectName("subtle_btn")
+        self.trans_tts_uk_btn.setToolTip("译文英式发音 (UK)")
+        self.trans_tts_uk_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.trans_tts_uk_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.trans_tts_uk_btn.clicked.connect(lambda: self._play_translation_audio("uk"))
+        self.trans_tts_uk_btn.hide()
+        trans_bottom.addWidget(self.trans_tts_uk_btn)
+
+        self.trans_tts_us_btn = QPushButton("美 🔊", self)
+        self.trans_tts_us_btn.setObjectName("subtle_btn")
+        self.trans_tts_us_btn.setToolTip("译文美式发音 (US)")
+        self.trans_tts_us_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.trans_tts_us_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.trans_tts_us_btn.clicked.connect(lambda: self._play_translation_audio("us"))
+        self.trans_tts_us_btn.hide()
+        trans_bottom.addWidget(self.trans_tts_us_btn)
 
         self.copy_btn = QPushButton("复制", self)
         self.copy_btn.setObjectName("action_btn_primary")
@@ -1335,14 +1384,19 @@ class PopupBubble(QWidget):
         self.recovery_bar.hide()
         text = self.original_edit.toPlainText().strip()
         has_text = bool(text)
+        has_en = _has_english_text(text)
         self.clear_orig_btn.setVisible(has_text)
         self.translate_btn.setVisible(has_text)
+        self.tts_uk_btn.setVisible(has_en)
+        self.tts_us_btn.setVisible(has_en)
         self.orig_meta_label.setText(self._format_meta(text))
 
         if text:
             self.text_browser.clear()
             self.latency_label.setText("")
             self.status_msg.setText("原文已修改，待重新翻译")
+            self.trans_tts_uk_btn.hide()
+            self.trans_tts_us_btn.hide()
             if self.config.auto_translate_input:
                 self._input_debounce_timer.start(600)
         else:
@@ -1350,6 +1404,8 @@ class PopupBubble(QWidget):
             self.text_browser.clear()
             self.latency_label.setText("")
             self.status_msg.setText("")
+            self.trans_tts_uk_btn.hide()
+            self.trans_tts_us_btn.hide()
 
     def mark_query_pending(self) -> None:
         """设置应用后标记待重译，保留当前原文，不自动发出新请求。"""
@@ -1372,6 +1428,8 @@ class PopupBubble(QWidget):
         """一键清空输入框与结果"""
         self.query_invalidated.emit()
         self._input_debounce_timer.stop()
+        if hasattr(self, "audio_player"):
+            self.audio_player.stop()
         self.original_edit.clear()
         self.text_browser.clear()
         self.status_msg.setText("")
@@ -1383,12 +1441,18 @@ class PopupBubble(QWidget):
         self.recovery_bar.hide()
         self.clear_orig_btn.hide()
         self.translate_btn.hide()
+        self.tts_uk_btn.hide()
+        self.tts_us_btn.hide()
+        self.trans_tts_uk_btn.hide()
+        self.trans_tts_us_btn.hide()
         self.original_edit.setFocus()
 
     def open_for_input(self) -> None:
         """主动打开浮窗，聚焦于原文输入框，供用户手动键入或复制粘贴查词"""
         self.query_invalidated.emit()
         self._input_debounce_timer.stop()
+        if hasattr(self, "audio_player"):
+            self.audio_player.stop()
         self.original_edit.clear()
         self.text_browser.clear()
         self.status_msg.setText("")
@@ -1400,6 +1464,10 @@ class PopupBubble(QWidget):
         self.recovery_bar.hide()
         self.clear_orig_btn.hide()
         self.translate_btn.hide()
+        self.tts_uk_btn.hide()
+        self.tts_us_btn.hide()
+        self.trans_tts_uk_btn.hide()
+        self.trans_tts_us_btn.hide()
 
         if self._is_pinned and self._fixed_pos is not None:
             self.move(self._fixed_pos)
@@ -1680,9 +1748,16 @@ class PopupBubble(QWidget):
                 self.config.fixed_y = self.pos().y()
                 self._save_current_config()
 
+        if hasattr(self, "audio_player"):
+            self.audio_player.stop()
         has_text = bool(text.strip())
+        has_en = _has_english_text(text)
         self.clear_orig_btn.setVisible(has_text)
         self.translate_btn.setVisible(has_text)
+        self.tts_uk_btn.setVisible(has_en)
+        self.tts_us_btn.setVisible(has_en)
+        self.trans_tts_uk_btn.hide()
+        self.trans_tts_us_btn.hide()
 
         if not self.isVisible():
             self._deactivate_input_mode()
@@ -1713,8 +1788,11 @@ class PopupBubble(QWidget):
         self.orig_meta_label.setText(self._format_meta(result.original_text))
 
         has_text = bool(result.original_text.strip())
+        orig_has_en = _has_english_text(result.original_text)
         self.clear_orig_btn.setVisible(has_text)
         self.translate_btn.setVisible(has_text)
+        self.tts_uk_btn.setVisible(orig_has_en)
+        self.tts_us_btn.setVisible(orig_has_en)
 
         if not result.is_success():
             message = result.translated_text.removeprefix("[Error]").strip() or "翻译失败，请重试。"
@@ -1723,12 +1801,17 @@ class PopupBubble(QWidget):
                 f"<span style='color: #f85149; font-weight: 500;'>{html_err}</span>"
             )
             self.copy_btn.setEnabled(False)
+            self.trans_tts_uk_btn.hide()
+            self.trans_tts_us_btn.hide()
             self.error_settings_btn.setVisible(bool(self.on_configure_provider or self.on_open_settings))
             self.recovery_bar.show()
         else:
             self.text_browser.setMarkdown(result.translated_text)
             self.copy_btn.setEnabled(True)
             self.recovery_bar.hide()
+            trans_has_en = _has_english_text(result.translated_text)
+            self.trans_tts_uk_btn.setVisible(trans_has_en)
+            self.trans_tts_us_btn.setVisible(trans_has_en)
 
         if self._is_pinned or self.selection_config.get_mode() == SelectionMode.COMPANION:
             if self._is_pinned and self._fixed_pos is not None:
@@ -1761,11 +1844,61 @@ class PopupBubble(QWidget):
             self.hide()
 
     def hideEvent(self, event) -> None:
+        if hasattr(self, "audio_player"):
+            self.audio_player.stop()
         self._input_debounce_timer.stop()
         self.auto_hide_timer.stop()
         self._deactivate_input_mode()
         self.closed.emit()
         super().hideEvent(event)
+
+    def _play_original_audio(self, accent: str) -> None:
+        text = self.original_edit.toPlainText().strip()
+        if not text:
+            return
+        btn = self.tts_uk_btn if accent == "uk" else self.tts_us_btn
+        prefix = "英" if accent == "uk" else "美"
+        btn.setText(f"{prefix} ⏳")
+        self.audio_player.play(text, accent=accent, channel="orig")
+
+    def _play_translation_audio(self, accent: str) -> None:
+        text = self.text_browser.toPlainText().strip()
+        if not text:
+            return
+        btn = self.trans_tts_uk_btn if accent == "uk" else self.trans_tts_us_btn
+        prefix = "英" if accent == "uk" else "美"
+        btn.setText(f"{prefix} ⏳")
+        self.audio_player.play(text, accent=accent, channel="trans")
+
+    def _on_audio_playback_started(self, accent: str) -> None:
+        if getattr(self.audio_player, "_active_channel", "orig") == "orig":
+            btn = self.tts_uk_btn if accent == "uk" else self.tts_us_btn
+        else:
+            btn = self.trans_tts_uk_btn if accent == "uk" else self.trans_tts_us_btn
+        prefix = "英" if accent == "uk" else "美"
+        btn.setText(f"{prefix} 🔊")
+
+    def _on_audio_playback_finished(self, accent: str) -> None:
+        self.tts_uk_btn.setText("英 🔊")
+        self.tts_us_btn.setText("美 🔊")
+        self.trans_tts_uk_btn.setText("英 🔊")
+        self.trans_tts_us_btn.setText("美 🔊")
+
+    def _on_audio_playback_failed(self, accent: str, err_msg: str) -> None:
+        if getattr(self.audio_player, "_active_channel", "orig") == "orig":
+            target_btn = self.tts_uk_btn if accent == "uk" else self.tts_us_btn
+        else:
+            target_btn = self.trans_tts_uk_btn if accent == "uk" else self.trans_tts_us_btn
+        prefix = "英" if accent == "uk" else "美"
+        if target_btn:
+            target_btn.setText(f"{prefix} ⚠️")
+            target_btn.setToolTip(f"发音失败: {err_msg}")
+            QTimer.singleShot(1500, lambda: self._reset_tts_button(target_btn, prefix, accent))
+
+    def _reset_tts_button(self, btn: QPushButton, prefix: str, accent: str) -> None:
+        btn.setText(f"{prefix} 🔊")
+        tooltip = "英式发音 (UK)" if accent == "uk" else "美式发音 (US)"
+        btn.setToolTip(tooltip)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

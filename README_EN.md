@@ -6,7 +6,7 @@
 
 A lightweight, blazing-fast cross-platform desktop text-selection translation tool supporting Linux (X11) and Windows.
 
-Current source version: **v0.1.9**. See the [release notes (Chinese)](docs/release-0.1.9.md) for the interaction improvements.
+Current source version: **v0.2.0**. See the [release notes (Chinese)](docs/release-0.2.0.md) for details.
 
 Named after the Chinese proverb *"Peaches and plums do not speak, yet a path is formed beneath them"* (signifying quiet excellence). It comes with built-in free Microsoft Translator (works out of the box without any API key or account registration), while supporting seamless integration with modern LLMs such as DeepSeek, OpenAI, Zhipu GLM, and local Ollama. The floating bubble utilizes a focus-preserving, always-on-top architecture that never steals keyboard focus from your terminal, code editor, or writing apps.
 
@@ -15,6 +15,7 @@ Named after the Chinese proverb *"Peaches and plums do not speak, yet a path is 
 ## Key Features
 
 - **Zero-Config Out-of-the-Box**: Bundled with free Microsoft Translator. Download, run, and start translating immediately with no upfront setup.
+- **UK / US Native Pronunciation (TTS)**: Dual audio buttons (`[英 🔊]` and `[美 🔊]`) with authentic recorded voice audio for words/phrases and smooth neural fallback for full sentences. Includes smart language awareness (only displayed on English text, hidden for pure Chinese) and 0ms disk cache.
 - **Multi-Provider Aggregation**: Effortlessly switch translation backends on the fly from the floating header menu—Microsoft Translator, DeepSeek, OpenAI, Zhipu GLM, and local Ollama (e.g. Qwen).
 - **Non-Stealing Floating Bubble**: The popup never steals keyboard input focus or interrupts your active typing session.
 - **System-Native Font Adaptation**: Automatically adapts to modern platform UI typography (Microsoft YaHei UI on Windows, Noto Sans CJK on Linux), ensuring clean and crisp rendering.
