@@ -6,7 +6,7 @@
 
 A lightweight, blazing-fast cross-platform desktop text-selection translation tool supporting Linux (X11) and Windows.
 
-Current source version: **v0.1.8**. See the [release notes (Chinese)](docs/release-0.1.8.md) for the interaction improvements.
+Current source version: **v0.1.9**. See the [release notes (Chinese)](docs/release-0.1.9.md) for the interaction improvements.
 
 Named after the Chinese proverb *"Peaches and plums do not speak, yet a path is formed beneath them"* (signifying quiet excellence). It comes with built-in free Microsoft Translator (works out of the box without any API key or account registration), while supporting seamless integration with modern LLMs such as DeepSeek, OpenAI, Zhipu GLM, and local Ollama. The floating bubble utilizes a focus-preserving, always-on-top architecture that never steals keyboard focus from your terminal, code editor, or writing apps.
 
@@ -20,7 +20,7 @@ Named after the Chinese proverb *"Peaches and plums do not speak, yet a path is 
 - **System-Native Font Adaptation**: Automatically adapts to modern platform UI typography (Microsoft YaHei UI on Windows, Noto Sans CJK on Linux), ensuring clean and crisp rendering.
 - **Single-Instance Protection**: Built-in IPC process locking prevents multiple instances from spawning when repeatedly clicking the executable or shortcut. Repeated launches seamlessly bring the existing instance to the foreground.
 - **Flexible Text Selection**:
-  - **Global Hotkey**: Press `Alt + D` on selected text. Features modifier key release and focus-loss mitigation specifically optimized for Windows. Alternate hotkeys (e.g., `Alt + Q`) can be registered.
+  - **Global Hotkey**: Press `Alt + Q` on selected text. Features modifier key release and focus-loss mitigation specifically optimized for Windows. Alternate hotkeys can be registered.
   - **Mouse Side Buttons**: Trigger translation instantly using mouse forward/backward side buttons (X1/X2).
   - **Auto-Popup Mode**: Automatically translates whenever a mouse selection is released (can be toggled in the system tray).
   - **Manual Query Box**: Press the hotkey without a selection, or double-click the system tray icon to reveal an instant manual query box.
