@@ -1,0 +1,48 @@
+name: UX Windows Package
+
+on:
+  push:
+    branches:
+      - ux-reading-modes
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-package:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install Python and dependencies
+        run: |
+          uv python install 3.12
+          uv sync --frozen --dev
+      - name: Test
+        run: uv run --no-sync pytest -q tests --tb=short
+      - name: Build Windows package
+        run: uv run --no-sync python scripts/build.py --label ux-20261002
+      - name: Verify packaged CLI
+        shell: pwsh
+        run: |
+          $env:APPDATA = Join-Path $env:RUNNER_TEMP 'yanxi-package-check'
+          & './dist/yanxi/yanxi-cli.exe' --help
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged CLI help failed' }
+          & './dist/yanxi/yanxi-cli.exe' --list-providers
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged CLI provider list failed' }
+          Get-FileHash './dist/*.zip' -Algorithm SHA256 | Format-List
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: yanxi-ux-windows-${{ github.sha }}
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 14

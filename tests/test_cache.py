@@ -63,3 +63,13 @@ def test_cache_clear(temp_cache):
 
     temp_cache.clear()
     assert temp_cache.get("cat", "en", "zh-CN", "deepseek") is None
+
+
+def test_connection_closed_even_when_operation_raises(temp_cache):
+    import sqlite3
+    with pytest.raises(RuntimeError):
+        with temp_cache._get_connection() as connection:
+            connection.execute("SELECT 1")
+            raise RuntimeError("aborted operation")
+    with pytest.raises(sqlite3.ProgrammingError):
+        connection.execute("SELECT 1")

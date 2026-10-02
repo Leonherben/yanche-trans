@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 import hashlib
+from contextlib import contextmanager
 import sqlite3
 import time
 from datetime import datetime
@@ -28,10 +29,15 @@ class SQLiteCache:
 
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _get_connection(self):
         conn = sqlite3.connect(str(self.db_path), timeout=5.0)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:

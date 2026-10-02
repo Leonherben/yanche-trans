@@ -8,7 +8,11 @@ from typing import Callable, Optional
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
-from yanxi.core.config import AppConfig
+from yanxi.core.config import AppConfig, SelectionMode
+from yanxi.adapters.gui.selection_modes import MODE_LABELS, add_mode_actions
+from yanxi.adapters.gui.languages import language_label, add_language_actions, sync_language_actions
+from yanxi.adapters.gui.providers import provider_label, provider_menu_label, add_provider_actions
+from yanxi.core.provider_state import is_configured
 from yanxi.adapters.gui.theme import AVAILABLE_THEMES, AVAILABLE_OPACITIES
 from yanxi.adapters.gui.icon_helper import get_tray_icon
 
@@ -26,11 +30,12 @@ class 言蹊翻译Tray(QSystemTrayIcon):
         on_target_lang_change: Optional[Callable[[str], None]] = None,
         on_theme_change: Optional[Callable[[str], None]] = None,
         on_opacity_change: Optional[Callable[[float], None]] = None,
-        on_toggle_auto_popup: Optional[Callable[[bool], None]] = None,
+        on_selection_mode_change: Optional[Callable[[SelectionMode], None]] = None,
         on_clear_cache: Optional[Callable[[], None]] = None,
         on_open_settings: Optional[Callable[[], None]] = None,
         on_check_update: Optional[Callable[[], None]] = None,
         on_quit: Optional[Callable[[], None]] = None,
+        on_source_lang_change: Optional[Callable[[str], None]] = None,
     ) -> None:
         icon = self._create_vector_icon()
         super().__init__(icon, parent)
@@ -39,9 +44,10 @@ class 言蹊翻译Tray(QSystemTrayIcon):
         self.on_toggle_listener = on_toggle_listener
         self.on_provider_change = on_provider_change
         self.on_target_lang_change = on_target_lang_change
+        self.on_source_lang_change = on_source_lang_change
         self.on_theme_change = on_theme_change
         self.on_opacity_change = on_opacity_change
-        self.on_toggle_auto_popup = on_toggle_auto_popup
+        self.on_selection_mode_change = on_selection_mode_change
         self.on_clear_cache = on_clear_cache
         self.on_open_settings = on_open_settings
         self.on_check_update = on_check_update
@@ -86,41 +92,22 @@ class 言蹊翻译Tray(QSystemTrayIcon):
         self.toggle_action.triggered.connect(self._handle_toggle)
         menu.addAction(self.toggle_action)
 
-        self.auto_popup_action = QAction("划选自动翻译", menu, checkable=True)
-        self.auto_popup_action.setChecked(self.config.selection.auto_popup_on_selection)
-        self.auto_popup_action.triggered.connect(self._handle_toggle_auto_popup)
-        menu.addAction(self.auto_popup_action)
+        self.mode_menu = menu.addMenu("取词模式")
+        self.mode_actions = add_mode_actions(
+            self.mode_menu, self.config.selection.get_mode(), self._handle_selection_mode_changed
+        )
+        self.update_selection_mode()
 
         menu.addSeparator()
 
         # 2. 翻译引擎单选菜单
-        provider_menu = menu.addMenu("翻译引擎")
-        provider_group = QActionGroup(provider_menu)
-        provider_group.setExclusive(True)
-        self.provider_actions.clear()
-        for name in self.config.providers.keys():
-            act = QAction(name, provider_menu, checkable=True)
-            if name == self.config.default_provider:
-                act.setChecked(True)
-            act.triggered.connect(lambda checked, p=name: self._handle_provider_changed(p))
-            provider_group.addAction(act)
-            provider_menu.addAction(act)
-            self.provider_actions[name] = act
+        self.provider_menu = menu.addMenu("翻译引擎")
+        self.refresh_providers()
 
-        # 3. 目标语言选择
-        lang_menu = menu.addMenu("目标语言")
-        lang_group = QActionGroup(lang_menu)
-        lang_group.setExclusive(True)
-        self.lang_actions.clear()
-        langs = [("简体中文", "zh-CN"), ("English", "en"), ("日本語", "ja"), ("한국어", "ko")]
-        for title, code in langs:
-            act = QAction(title, lang_menu, checkable=True)
-            if code == self.config.default_target_lang:
-                act.setChecked(True)
-            act.triggered.connect(lambda checked, c=code: self._handle_lang_changed(c))
-            lang_group.addAction(act)
-            lang_menu.addAction(act)
-            self.lang_actions[code] = act
+        # 3. 与浮窗共用翻译方向选项
+        self.source_lang_menu = menu.addMenu("源语言")
+        self.target_lang_menu = menu.addMenu("目标语言")
+        self.update_translation_direction()
 
         menu.addSeparator()
 
@@ -151,9 +138,9 @@ class 言蹊翻译Tray(QSystemTrayIcon):
 
         menu.addSeparator()
 
-        # 5. 打开偏好设置
+        # 5. 打开设置
         if self.on_open_settings:
-            settings_act = QAction("⚙ 偏好设置...", menu)
+            settings_act = QAction("⚙ 设置...", menu)
             settings_act.triggered.connect(self.on_open_settings)
             menu.addAction(settings_act)
 
@@ -194,47 +181,112 @@ class 言蹊翻译Tray(QSystemTrayIcon):
         if self.on_opacity_change:
             self.on_opacity_change(opacity)
 
-    def _handle_toggle_auto_popup(self, checked: bool) -> None:
-        self.config.selection.auto_popup_on_selection = checked
-        self.config.save()
-        if self.on_toggle_auto_popup:
-            self.on_toggle_auto_popup(checked)
-        tip = "已开启划选自动翻译" if checked else "已关闭划选自动翻译 (仅快捷键触发)"
-        self.showMessage("言蹊翻译", tip, QSystemTrayIcon.MessageIcon.Information, 1500)
+    def _handle_selection_mode_changed(self, mode: SelectionMode) -> None:
+        if self.on_selection_mode_change:
+            self.on_selection_mode_change(mode)
+        else:
+            self.config.selection.set_mode(mode)
+            self.config.save()
+        self.update_selection_mode()
+
+    def update_selection_mode(self) -> None:
+        mode = self.config.selection.get_mode()
+        label = MODE_LABELS[mode]
+        for candidate, action in self.mode_actions.items():
+            action.setChecked(candidate == mode)
+        suffix = "（已暂停）" if not self._listener_enabled else ""
+        self.mode_menu.setTitle(f"取词模式：{label}{suffix}")
+        self.setToolTip(f"言蹊翻译 · {label}{suffix}")
 
     def _handle_toggle(self) -> None:
         self._listener_enabled = not self._listener_enabled
         if self._listener_enabled:
             self.toggle_action.setText("取词服务: 开启")
-            self.setToolTip("言蹊翻译")
         else:
             self.toggle_action.setText("取词服务: 已暂停")
-            self.setToolTip("言蹊翻译 (已暂停)")
+        self.update_selection_mode()
 
         if self.on_toggle_listener:
             self.on_toggle_listener(self._listener_enabled)
 
     def _handle_provider_changed(self, provider_name: str) -> None:
-        self.config.default_provider = provider_name
-        self.config.save()
-        for name, act in self.provider_actions.items():
-            act.setChecked(name == provider_name)
         if self.on_provider_change:
             self.on_provider_change(provider_name)
-        self.showMessage("言蹊翻译", f"已切换翻译引擎为: {provider_name}", QSystemTrayIcon.MessageIcon.Information, 1500)
+        else:
+            config = self.config.providers.get(provider_name)
+            if not config or not is_configured(config):
+                return
+            if provider_name == self.config.default_provider:
+                return
+            self.config.default_provider = provider_name
+            self.config.save()
+        self.update_active_provider(self.config.default_provider)
 
     def update_active_provider(self, provider_name: str) -> None:
         """从外部（如浮窗）同步选中的引擎状态"""
         for name, act in self.provider_actions.items():
             act.setChecked(name == provider_name)
+        self.provider_menu.setTitle(f"翻译引擎：{provider_label(provider_name)}")
+
+    def refresh_providers(self) -> None:
+        if not self.provider_actions:
+            self.provider_actions = add_provider_actions(
+                self.provider_menu, list(self.config.providers), self.config.providers,
+                self.config.default_provider, self._handle_provider_changed
+            )
+        group = self.provider_menu._provider_group
+        for name, config in self.config.providers.items():
+            action = self.provider_actions.get(name)
+            if action is None:
+                action = QAction(self.provider_menu)
+                action.triggered.connect(lambda checked, value=name: self._handle_provider_changed(value))
+                self.provider_menu.addAction(action)
+                self.provider_actions[name] = action
+            ready = is_configured(config)
+            label = provider_menu_label(name, config)
+            action.setText(label if ready else f"{label}（点击设置）")
+            action.setCheckable(ready)
+            if ready:
+                group.addAction(action)
+            else:
+                group.removeAction(action)
+        for name, action in self.provider_actions.items():
+            action.setVisible(name in self.config.providers)
+        self.update_active_provider(self.config.default_provider)
 
     def _handle_lang_changed(self, lang_code: str) -> None:
-        self.config.default_target_lang = lang_code
-        self.config.save()
-        for code, act in self.lang_actions.items():
-            act.setChecked(code == lang_code)
+        if lang_code == self.config.default_target_lang:
+            return
         if self.on_target_lang_change:
             self.on_target_lang_change(lang_code)
+        else:
+            self.config.default_target_lang = lang_code
+            self.config.save()
+        self.update_translation_direction()
+
+    def _handle_source_lang_changed(self, lang_code: str) -> None:
+        if lang_code == self.config.default_source_lang:
+            return
+        if self.on_source_lang_change:
+            self.on_source_lang_change(lang_code)
+        else:
+            self.config.default_source_lang = lang_code
+            self.config.save()
+        self.update_translation_direction()
+
+    def update_translation_direction(self) -> None:
+        source, target = self.config.default_source_lang, self.config.default_target_lang
+        for menu, attribute, current, callback, is_source in (
+            (self.source_lang_menu, "source_lang_actions", source, self._handle_source_lang_changed, True),
+            (self.target_lang_menu, "lang_actions", target, self._handle_lang_changed, False),
+        ):
+            actions = getattr(self, attribute, {})
+            if not actions:
+                actions = add_language_actions(menu, current, callback, source=is_source)
+                setattr(self, attribute, actions)
+            sync_language_actions(menu, actions, current, source=is_source)
+        self.source_lang_menu.setTitle(f"源语言：{language_label(source)}")
+        self.target_lang_menu.setTitle(f"目标语言：{language_label(target)}")
 
     def _handle_clear_cache(self) -> None:
         if self.on_clear_cache:

@@ -3,8 +3,6 @@
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import pytest
-from PySide6.QtWidgets import QApplication
 from yanxi.core.config import UIConfig
 from yanxi.adapters.gui.theme import (
     detect_system_theme,
@@ -15,14 +13,6 @@ from yanxi.adapters.gui.theme import (
     AVAILABLE_OPACITIES,
 )
 from yanxi.adapters.gui.popup import PopupBubble
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
 
 
 def test_detect_system_theme(qapp):

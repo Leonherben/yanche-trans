@@ -5,18 +5,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import sys
 import pytest
-from PySide6.QtWidgets import QApplication
 from yanxi.core.config import UIConfig
 from yanxi.core.models import TranslationResult
 from yanxi.adapters.gui.popup import PopupBubble
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
 
 
 def test_popup_init(qapp):
@@ -27,7 +18,7 @@ def test_popup_init(qapp):
     assert popup._current_provider == "microsoft"
     popup.set_active_provider("deepseek")
     assert popup._current_provider == "deepseek"
-    assert "deepseek" in popup.provider_btn.text()
+    assert "DeepSeek" in popup.provider_btn.text()
     popup.close()
 
 
@@ -44,7 +35,7 @@ def test_popup_display_success_markdown(qapp):
     )
     popup.display_result(result)
     assert popup.isVisible()
-    assert "deepseek" in popup.provider_label.text()
+    assert "DeepSeek" in popup.provider_label.text()
     assert "120" in popup.latency_label.text()
     assert popup.latency_label.isVisible()
     assert popup.orig_meta_label.isVisible()
@@ -77,7 +68,7 @@ def test_popup_switch_provider(qapp):
     popup._handle_provider_switch("openai")
     assert len(switched) == 1
     assert switched[0] == ("openai", "sample")
-    assert "openai" in popup.provider_btn.text()
+    assert "OpenAI" in popup.provider_btn.text()
     popup.close()
 
 
@@ -238,7 +229,7 @@ def test_popup_copy_buttons_and_meta(qapp):
     popup._copy_result()
     assert pyperclip.paste() == "人工智能"
 
-    # 测试出现错误提示时，复制按钮依然能正常复制错误文本以便用户排查反馈
+    # 错误不作为译文复制，提供重试入口。
     err_result = TranslationResult(
         original_text="Test Error",
         translated_text="[Error] 微软翻译错误: 动态会话失败",
@@ -248,7 +239,9 @@ def test_popup_copy_buttons_and_meta(qapp):
     )
     popup.display_result(err_result)
     popup._copy_result()
-    assert pyperclip.paste() == "[Error] 微软翻译错误: 动态会话失败"
+    assert pyperclip.paste() == "人工智能"
+    assert not popup.copy_btn.isEnabled()
+    assert popup.retry_btn.isVisible()
 
     popup.close()
 
@@ -349,8 +342,8 @@ def test_popup_opacity_change(qapp):
     popup.close()
 
 
-def test_popup_mode_b_and_side_button(qapp):
-    from yanxi.core.config import SelectionConfig
+def test_popup_selection_mode_and_side_button(qapp):
+    from yanxi.core.config import SelectionConfig, SelectionMode
     saved = []
     sel_config = SelectionConfig(auto_popup_on_selection=False, enable_mouse_side_button=True)
     popup = PopupBubble(
@@ -360,9 +353,10 @@ def test_popup_mode_b_and_side_button(qapp):
         on_update_selection_config=lambda: saved.append("updated_selection"),
     )
 
-    # 切换模式 B 开启
-    popup._toggle_auto_popup(True)
+    popup._set_selection_mode(SelectionMode.AUTOMATIC)
     assert sel_config.auto_popup_on_selection is True
+    assert sel_config.auto_popup_only_when_visible is False
+    assert "划选即翻译" in popup.mode_btn.text()
     assert "updated_selection" in saved
 
     # 切换鼠标侧键关闭

@@ -5,6 +5,8 @@
 """
 
 import os
+import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -151,7 +153,7 @@ cscript //nologo "%~dp0创建桌面快捷方式.vbs"
 - 预置免费微软翻译 (Microsoft Translator)，开箱即用免配置
 - 悬浮窗采用无焦点置顶防抢占技术，打字输入不中断
 - 右下角托盘图标支持一键切换翻译引擎、暗黑/亮色主题与透明度
-- 偏好设置中内置【软件更新与关于】，支持在线检测 GitHub 最新版本并一键升级
+- 设置中内置【软件更新与关于】，支持在线检测 GitHub 最新版本并下载
 
 【命令行支持】
 可在当前目录下打开 CMD / PowerShell 运行：
@@ -207,6 +209,11 @@ def prune_bundle(bundle_dir: Path) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--label", default="", help="本地构建标识，如 ux-20261002；不修改上游版本号")
+    label = parser.parse_args().label
+    if label and not re.fullmatch(r"[a-zA-Z0-9-]+", label):
+        parser.error("构建标识只能包含字母、数字和连字符")
     project_root = Path(__file__).resolve().parent.parent
     dist_dir = project_root / "dist"
     version = get_version(project_root)
@@ -235,10 +242,16 @@ def main() -> None:
     # 2. 运行 PyInstaller
     print("\n[2/4] 运行 PyInstaller 构建独立程序目录...")
     spec_file = project_root / "yanxi.spec"
+    build_env = os.environ.copy()
+    if is_win:
+        # Qt 使用 Windows ICU；外部工具的同名 ICU DLL 不应通过 PATH 抢先被打包。
+        system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+        build_env["PATH"] = str(system_root / "System32") + os.pathsep + build_env.get("PATH", "")
     subprocess.run(
         [sys.executable, "-m", "PyInstaller", "--clean", "-y", str(spec_file)],
         cwd=project_root,
         check=True,
+        env=build_env,
     )
 
     bundle_dir = dist_dir / "yanxi"
@@ -261,6 +274,16 @@ def main() -> None:
     else:
         generate_linux_desktop_files(bundle_dir)
         archive_name = f"yanxi-v{version}-{platform_name}.tar.gz"
+
+    if label:
+        archive_name = archive_name.replace(f"v{version}-", f"v{version}-{label}-", 1)
+        trial_notes = project_root / "docs" / "ux-trial.md"
+        if trial_notes.exists():
+            shutil.copy2(trial_notes, bundle_dir / "交互改进说明.md")
+    (bundle_dir / "BUILD_INFO.json").write_text(
+        json.dumps({"base_version": version, "build_label": label, "platform": platform_name},
+                   ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     # 深度体积瘦身
     prune_bundle(bundle_dir)

@@ -1,4 +1,4 @@
-"""言蹊翻译 (YanXi Trans) 偏好设置与 API 配置中心
+"""言蹊翻译 (YanXi Trans) 设置与 API 配置中心
 
 支持在图形界面中可视化配置翻译服务 API Key、大模型参数、快捷键与外观主题。
 """
@@ -34,6 +34,9 @@ from PySide6.QtWidgets import (
 
 import yanxi
 from yanxi.core.config import AppConfig, ProviderConfig
+from yanxi.core.provider_state import is_configured
+from yanxi.adapters.gui.selection_modes import MODE_LABELS, MODE_DESCRIPTIONS
+from yanxi.adapters.gui.providers import provider_menu_label
 from yanxi.core.translator.factory import create_translator
 from yanxi.core.updater import check_github_update, open_release_page, UpdateInfo
 from yanxi.adapters.gui.theme import AVAILABLE_THEMES
@@ -49,7 +52,7 @@ class _UpdateWorkerSignals(QObject):
 
 
 class SettingsDialog(QDialog):
-    """可视化偏好设置中心对话框"""
+    """可视化设置中心对话框"""
 
     def __init__(
         self,
@@ -58,7 +61,7 @@ class SettingsDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("言蹊翻译 - 偏好设置")
+        self.setWindowTitle("言蹊翻译 - 设置")
         self.setWindowIcon(get_app_icon())
         self.resize(520, 560)
         self.setMinimumSize(460, 480)
@@ -137,12 +140,14 @@ class SettingsDialog(QDialog):
         self.provider_combo.setMinimumWidth(220)
 
         for name in self.working_config.providers.keys():
-            self.provider_combo.addItem(name)
+            self.provider_combo.addItem(provider_menu_label(name, self.working_config.providers[name]), name)
 
-        idx = self.provider_combo.findText(self.current_provider_name)
+        idx = self.provider_combo.findData(self.current_provider_name)
         if idx >= 0:
             self.provider_combo.setCurrentIndex(idx)
-        self.provider_combo.currentTextChanged.connect(self._on_provider_selection_changed)
+        self.provider_combo.currentIndexChanged.connect(
+            lambda index: self._on_provider_selection_changed(self.provider_combo.itemData(index))
+        )
 
         selector_layout.addWidget(selector_label)
         selector_layout.addWidget(self.provider_combo)
@@ -216,6 +221,8 @@ class SettingsDialog(QDialog):
 
         # 加载当前服务商数据
         self._load_provider_fields(self.current_provider_name)
+        self.key_edit.textEdited.connect(lambda text: self._save_current_provider_fields())
+        self.url_edit.textEdited.connect(lambda text: self._save_current_provider_fields())
         return widget
 
     def _toggle_key_echo(self) -> None:
@@ -262,6 +269,15 @@ class SettingsDialog(QDialog):
             p_cfg.api_key = self.key_edit.text().strip()
             p_cfg.model = self.model_edit.text().strip()
             p_cfg.base_url = self.url_edit.text().strip()
+            index = self.provider_combo.findData(p_name)
+            if index >= 0:
+                self.provider_combo.setItemText(index, provider_menu_label(p_name, p_cfg))
+
+    def select_provider(self, provider_name: str) -> None:
+        self.switch_to_tab(0)
+        index = self.provider_combo.findData(provider_name)
+        if index >= 0:
+            self.provider_combo.setCurrentIndex(index)
 
     def _on_provider_selection_changed(self, new_provider_name: str) -> None:
         if not new_provider_name or new_provider_name == self.current_provider_name:
@@ -271,6 +287,11 @@ class SettingsDialog(QDialog):
         self._load_provider_fields(new_provider_name)
 
     def _on_set_default_clicked(self) -> None:
+        self._save_current_provider_fields()
+        if not is_configured(self.working_config.providers[self.current_provider_name]):
+            self._update_default_button_state(self.working_config.default_provider == self.current_provider_name)
+            self.test_status_label.setText("请先填写 API 密钥，再设为默认引擎。")
+            return
         self.working_config.default_provider = self.current_provider_name
         self._update_default_button_state(True)
 
@@ -329,19 +350,19 @@ class SettingsDialog(QDialog):
         self.mouse_side_check.setChecked(self.working_config.selection.enable_mouse_side_button)
         b_layout.addWidget(self.mouse_side_check)
 
-        self.auto_popup_check = QCheckBox("选中文本后自动弹出翻译 (松开鼠标即查)", behavior_group)
-        self.auto_popup_check.setChecked(self.working_config.selection.auto_popup_on_selection)
-        b_layout.addWidget(self.auto_popup_check)
-
-        self.auto_popup_visible_only_check = QCheckBox(
-            "仅当悬浮窗打开时自动划词 (伴随阅读模式，关闭浮窗时完全静默不打扰)", behavior_group
+        b_layout.addWidget(QLabel("取词模式：", behavior_group))
+        self.selection_mode_combo = QComboBox(behavior_group)
+        for mode, label in MODE_LABELS.items():
+            self.selection_mode_combo.addItem(label, mode)
+        self.selection_mode_combo.setCurrentIndex(
+            self.selection_mode_combo.findData(self.working_config.selection.get_mode())
         )
-        self.auto_popup_visible_only_check.setChecked(
-            self.working_config.selection.auto_popup_only_when_visible
-        )
-        self.auto_popup_visible_only_check.setEnabled(self.auto_popup_check.isChecked())
-        self.auto_popup_check.toggled.connect(self.auto_popup_visible_only_check.setEnabled)
-        b_layout.addWidget(self.auto_popup_visible_only_check)
+        b_layout.addWidget(self.selection_mode_combo)
+        self.selection_mode_hint = QLabel(behavior_group)
+        self.selection_mode_hint.setWordWrap(True)
+        self.selection_mode_combo.currentIndexChanged.connect(self._update_selection_mode_hint)
+        self._update_selection_mode_hint()
+        b_layout.addWidget(self.selection_mode_hint)
 
         layout.addWidget(behavior_group)
 
@@ -400,6 +421,9 @@ class SettingsDialog(QDialog):
 
         layout.addStretch()
         return widget
+
+    def _update_selection_mode_hint(self) -> None:
+        self.selection_mode_hint.setText(MODE_DESCRIPTIONS[self.selection_mode_combo.currentData()])
 
     def _on_add_extra_hotkey(self) -> None:
         text = self.new_hotkey_edit.text().strip()
@@ -467,6 +491,11 @@ class SettingsDialog(QDialog):
         self.open_on_startup_check = QCheckBox("启动应用时自动展示悬浮窗", ui_group)
         self.open_on_startup_check.setChecked(getattr(self.working_config.ui, "open_on_startup", True))
         form_layout.addRow("启动行为:", self.open_on_startup_check)
+
+        self.auto_translate_input_check = QCheckBox("输入后自动翻译（停顿 600 毫秒）", ui_group)
+        self.auto_translate_input_check.setChecked(self.working_config.ui.auto_translate_input)
+        self.auto_translate_input_check.setToolTip("关闭后，按回车或点击翻译提交；划词与快捷键取词不受影响。")
+        form_layout.addRow("手动输入:", self.auto_translate_input_check)
 
         layout.addWidget(ui_group)
         layout.addStretch()
@@ -618,8 +647,7 @@ class SettingsDialog(QDialog):
         # 收集取词配置
         sel = self.working_config.selection
         sel.enable_mouse_side_button = self.mouse_side_check.isChecked()
-        sel.auto_popup_on_selection = self.auto_popup_check.isChecked()
-        sel.auto_popup_only_when_visible = self.auto_popup_visible_only_check.isChecked()
+        sel.set_mode(self.selection_mode_combo.currentData())
         sel.hotkey = self.main_hotkey_edit.text().strip() or "<alt>+d"
         extra = []
         for i in range(self.extra_hotkeys_list.count()):
@@ -634,6 +662,7 @@ class SettingsDialog(QDialog):
         ui.window_opacity = round(self.opacity_slider.value() / 100.0, 2)
         ui.auto_hide_seconds = self.auto_hide_spin.value()
         ui.open_on_startup = self.open_on_startup_check.isChecked()
+        ui.auto_translate_input = self.auto_translate_input_check.isChecked()
 
         # 收集更新配置
         self.working_config.update.auto_check_update = self.auto_update_check.isChecked()

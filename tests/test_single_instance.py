@@ -1,17 +1,10 @@
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import time
-import pytest
-from PySide6.QtWidgets import QApplication
+import subprocess
+import sys
+import uuid
 from yanxi.core.single_instance import SingleInstance
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
 
 
 def test_single_instance_workflow(qapp):
@@ -48,3 +41,32 @@ def test_single_instance_workflow(qapp):
     # 清理关闭
     guard1.close()
     guard2.close()
+
+
+def test_wakeup_from_process_that_exits_immediately(qapp):
+    key = f"yanxi_test_{uuid.uuid4().hex}"
+    guard = SingleInstance(key)
+    assert guard.start_listen()
+    wakeups = []
+    guard.wakeup_received.connect(lambda: wakeups.append(True))
+    script = (
+        "from PySide6.QtWidgets import QApplication; "
+        "from yanxi.core.single_instance import SingleInstance; "
+        "app = QApplication([]); "
+        f"guard = SingleInstance({key!r}); "
+        "raise SystemExit(0 if guard.is_already_running(1000) else 1)"
+    )
+    child = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline and (child.poll() is None or not wakeups):
+            qapp.processEvents()
+            time.sleep(.01)
+        stdout, stderr = child.communicate(timeout=2)
+        assert child.returncode == 0, (stdout, stderr)
+        assert wakeups == [True]
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait()
+        guard.close()

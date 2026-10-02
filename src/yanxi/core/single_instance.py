@@ -39,7 +39,9 @@ class SingleInstance(QObject):
 
     def is_already_running(self, timeout_ms: int = 400) -> bool:
         """检测系统中是否已有运行中的实例，若存在则发送唤醒指令并返回 True"""
-        socket = QLocalSocket()
+        # Windows 命名管道可能仍在异步发送；由 guard 持有到断开，防止返回时丢包。
+        socket = QLocalSocket(self)
+        socket.disconnected.connect(socket.deleteLater)
         socket.connectToServer(self.server_name)
         connected = socket.waitForConnected(timeout_ms)
 
@@ -53,6 +55,7 @@ class SingleInstance(QObject):
                 socket.disconnectFromServer()
             return True
 
+        socket.deleteLater()
         return False
 
     def start_listen(self) -> bool:

@@ -24,14 +24,19 @@ def ensure_xcb_cursor_loaded() -> None:
 import atexit
 import signal
 import threading
+from dataclasses import dataclass
 from typing import Optional, Tuple
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from pynput import keyboard
 
-from yanxi.core.config import AppConfig
+from yanxi.core.config import AppConfig, SelectionMode
+from yanxi.core.provider_state import is_configured
+from yanxi.adapters.console import configure_console_output
 from yanxi.core.models import TranslationRequest, TranslationResult
+from yanxi.core.request_tracker import RequestTracker
+from yanxi.core.translator.base import BaseTranslator
 from yanxi.core.translator.factory import create_translator
 from yanxi.core.cache.sqlite_cache import SQLiteCache
 from yanxi.core.single_instance import SingleInstance
@@ -46,8 +51,21 @@ from yanxi.adapters.selection.windows import WindowsSelectionListener
 from yanxi.adapters.selection.hotkey_fallback import HotkeySelectionListener
 
 
+@dataclass(frozen=True)
+class TranslationJob:
+    request_id: int
+    request: TranslationRequest
+    translator: BaseTranslator
+    provider_name: str
+    enable_cache: bool
+
+
 class 言蹊翻译App(QObject):
     """主调度控制器"""
+
+    translation_requested = Signal(object, str, int, int)
+    translation_finished = Signal(object, object)
+    input_requested = Signal()
 
     def __init__(self, qapp: QApplication) -> None:
         super().__init__()
@@ -55,6 +73,12 @@ class 言蹊翻译App(QObject):
         self.config = AppConfig.load()
         self.cache = SQLiteCache()
         self._settings_dialog: Optional[SettingsDialog] = None
+        self._listener_enabled = True
+        self._requests = RequestTracker()
+        self._shutting_down = False
+        self.translation_requested.connect(self._start_translation)
+        self.translation_finished.connect(self._display_translation)
+        self.input_requested.connect(self._open_input)
 
         # 核心翻译引擎
         self.active_provider_cfg = self.config.get_active_provider()
@@ -72,17 +96,25 @@ class 言蹊翻译App(QObject):
             available_providers=list(self.config.providers.keys()),
             default_provider=self.config.default_provider,
             on_open_settings=self.open_settings,
+            default_source_lang=self.config.default_source_lang,
+            default_target_lang=self.config.default_target_lang,
+            on_source_lang_change=self.set_source_lang,
+            on_target_lang_change=self.set_target_lang,
+            provider_configs=self.config.providers,
+            on_configure_provider=self.open_provider_settings,
         )
         self.popup.closed.connect(self._on_popup_closed)
+        self.popup.query_invalidated.connect(self._requests.invalidate)
         self.tray = 言蹊翻译Tray(
             config=self.config,
             on_open_input=lambda: QTimer.singleShot(0, self.popup.open_for_input),
             on_toggle_listener=self.set_listener_enabled,
             on_provider_change=self.set_provider,
             on_target_lang_change=self.set_target_lang,
+            on_source_lang_change=self.set_source_lang,
             on_theme_change=lambda t: self.popup.apply_theme(theme_name=t),
             on_opacity_change=lambda o: self.popup.apply_theme(opacity=o),
-            on_toggle_auto_popup=self._on_toggle_auto_popup,
+            on_selection_mode_change=self.set_selection_mode,
             on_clear_cache=self.cache.clear,
             on_open_settings=self.open_settings,
             on_check_update=self.open_update_dialog,
@@ -109,13 +141,16 @@ class 言蹊翻译App(QObject):
         signal.signal(signal.SIGINT, lambda sig, frame: self.shutdown())
         signal.signal(signal.SIGTERM, lambda sig, frame: self.shutdown())
 
-    def _on_toggle_auto_popup(self, enabled: bool) -> None:
-        self.config.selection.auto_popup_on_selection = enabled
+    def set_selection_mode(self, mode: SelectionMode) -> None:
+        self.config.selection.set_mode(mode)
         self.config.save()
         self._reload_listeners()
 
     def _reload_listeners(self) -> None:
         """当用户在设置中更改快捷键或模式 B 触发方式时热重载监听器"""
+        self.popup.selection_config = self.config.selection
+        self.popup.refresh_selection_mode(self._listener_enabled)
+        self.tray.update_selection_mode()
         for listener in self.listeners:
             listener.stop()
         self.listeners.clear()
@@ -123,6 +158,7 @@ class 言蹊翻译App(QObject):
 
     def _on_popup_closed(self) -> None:
         """当浮窗隐藏或关闭时通知所有监听器进入冷却期，防止关闭动作误触划词"""
+        self._requests.invalidate()
         for listener in self.listeners:
             listener.on_popup_closed()
 
@@ -185,13 +221,14 @@ class 言蹊翻译App(QObject):
                 max_length=self.config.selection.max_length,
                 on_empty_click=self.on_empty_click,
                 get_x11_selection_fn=x11_listener.get_current_selection if x11_listener else None,
-                on_no_selection=lambda: QTimer.singleShot(0, self._handle_no_selection_hotkey),
+                on_no_selection=self.input_requested.emit,
             )
             self.listeners.append(hotkey_listener)
 
         # 启动所有选词监听器
         for listener in self.listeners:
-            listener.start()
+            if self._listener_enabled:
+                listener.start()
 
     def _init_panic_failsafe(self) -> None:
         """紧急逃生机制：按键无条件强制退出程序，解除所有系统拦截"""
@@ -211,87 +248,164 @@ class 言蹊翻译App(QObject):
 
     def on_text_selected(self, text: str, cursor_pos: Tuple[int, int]) -> None:
         """当捕获到划词文本时的核心调度"""
+        if self._shutting_down or not self._listener_enabled or not text:
+            return
         x, y = cursor_pos
-        # 1. 主线程更新 UI 显示 Loading
-        self.popup.show_loading_signal.emit(text, x, y)
+        request_id = self._requests.begin()
+        self.translation_requested.emit(request_id, text, x, y)
 
-        # 2. 异步执行查缓存或网络请求
-        threading.Thread(target=self._async_translate_pipeline, args=(text,), daemon=True).start()
+    @Slot(object, str, int, int)
+    def _start_translation(self, request_id: int, text: str, x: int, y: int) -> None:
+        if self._shutting_down or not self._requests.is_current(request_id):
+            return
+        job = TranslationJob(
+            request_id=request_id,
+            request=TranslationRequest(
+                text=text,
+                source_lang=self.config.default_source_lang,
+                target_lang=self.config.default_target_lang,
+            ),
+            translator=self.translator,
+            provider_name=self.active_provider_cfg.name,
+            enable_cache=self.config.enable_cache,
+        )
+        self.popup.display_loading(text, x, y)
+        threading.Thread(target=self._async_translate_pipeline, args=(job,), daemon=True).start()
 
-    def _async_translate_pipeline(self, text: str) -> None:
-        src = self.config.default_source_lang
-        tgt = self.config.default_target_lang
-        provider_name = self.active_provider_cfg.name
-
-        # 1. 尝试缓存
-        if self.config.enable_cache:
-            cached = self.cache.get(text, src, tgt, provider_name)
-            if cached:
-                self.popup.show_translation_signal.emit(cached)
+    def _async_translate_pipeline(self, job: TranslationJob) -> None:
+        if not self._requests.is_current(job.request_id):
+            return
+        request = job.request
+        try:
+            result = None
+            if job.enable_cache:
+                result = self.cache.get(
+                    request.text, request.source_lang, request.target_lang, job.provider_name
+                )
+            if not self._requests.is_current(job.request_id):
                 return
+            if result is None:
+                result = job.translator.translate(request)
+                if not self._requests.is_current(job.request_id):
+                    return
+                if result.is_success() and job.enable_cache:
+                    self.cache.put(result)
+        except Exception as error:
+            result = TranslationResult(
+                original_text=request.text,
+                translated_text=f"[Error] 翻译失败: {error}",
+                source_lang=request.source_lang,
+                target_lang=request.target_lang,
+                provider=job.provider_name,
+            )
+        if self._requests.is_current(job.request_id):
+            self.translation_finished.emit(job.request_id, result)
 
-        # 2. 调用 API
-        req = TranslationRequest(text=text, source_lang=src, target_lang=tgt)
-        result = self.translator.translate(req)
+    @Slot(object, object)
+    def _display_translation(self, request_id: int, result: TranslationResult) -> None:
+        if not self._shutting_down and self._requests.is_current(request_id):
+            self.popup.display_result(result)
 
-        # 3. 写入缓存
-        if result.is_success() and self.config.enable_cache:
-            self.cache.put(result)
-
-        # 4. 发送信号渲染
-        self.popup.show_translation_signal.emit(result)
+    @Slot()
+    def _open_input(self) -> None:
+        if not self._shutting_down:
+            self.popup.open_for_input()
 
     def set_listener_enabled(self, enabled: bool) -> None:
+        self._listener_enabled = enabled
         for listener in self.listeners:
             if enabled:
                 listener.start()
             else:
                 listener.stop()
+        self.popup.refresh_selection_mode(enabled)
 
     def set_provider(self, provider_name: str) -> None:
+        config = self.config.providers.get(provider_name)
+        if config is None:
+            return
+        if not is_configured(config):
+            self.open_provider_settings(provider_name)
+            self.tray.update_active_provider(self.config.default_provider)
+            return
+        if provider_name == self.config.default_provider:
+            return
+        self._requests.invalidate()
         self.config.default_provider = provider_name
         self.config.save()
         self.active_provider_cfg = self.config.get_active_provider()
         self.translator = create_translator(self.active_provider_cfg)
-        self.tray.update_active_provider(provider_name)
-        self.popup.set_active_provider(provider_name)
+        self._sync_translation_preferences()
+        self._retranslate_visible_query()
+
+    def _sync_translation_preferences(self) -> None:
+        self.tray.update_active_provider(self.config.default_provider)
+        self.tray.update_translation_direction()
+        self.popup.set_active_provider(self.config.default_provider)
+        self.popup.set_translation_direction(
+            self.config.default_source_lang, self.config.default_target_lang
+        )
+
+    def _retranslate_visible_query(self) -> None:
+        text = self.popup.current_query_text()
+        if self.popup.isVisible() and text:
+            self.retranslate_text(text)
 
     def retranslate_text(self, text: str) -> None:
         """从浮窗手动编辑或即时查词触发就地重新翻译"""
-        if not text:
+        if not text or self._shutting_down:
             return
-        self.popup.display_loading(text, self.popup.x(), self.popup.y())
-        threading.Thread(target=self._async_translate_pipeline, args=(text,), daemon=True).start()
+        request_id = self._requests.begin()
+        self._start_translation(request_id, text, self.popup.x(), self.popup.y())
 
     def switch_provider_and_retranslate(self, provider_name: str, text: str) -> None:
-        """从浮窗直接切换模型并就地重新翻译"""
+        """兼容浮窗回调，统一按当前编辑内容重译。"""
         self.set_provider(provider_name)
-        if text:
-            # 立即在当前浮窗位置展示 loading 并异步请求新结果
-            self.popup.display_loading(text, self.popup.x(), self.popup.y())
-            threading.Thread(target=self._async_translate_pipeline, args=(text,), daemon=True).start()
+
+    def set_source_lang(self, lang_code: str) -> None:
+        if lang_code == self.config.default_source_lang:
+            return
+        self._requests.invalidate()
+        self.config.default_source_lang = lang_code
+        self.config.save()
+        self._sync_translation_preferences()
+        self._retranslate_visible_query()
 
     def set_target_lang(self, lang_code: str) -> None:
+        if lang_code == self.config.default_target_lang:
+            return
+        self._requests.invalidate()
         self.config.default_target_lang = lang_code
         self.config.save()
+        self._sync_translation_preferences()
+        self._retranslate_visible_query()
 
     def open_settings(self) -> None:
-        """打开偏好设置中心（支持 API、模型、快捷键、主题等可视化配置）"""
+        """打开设置中心（支持 API、模型、快捷键、主题等可视化配置）"""
         if self._settings_dialog is None:
             self._settings_dialog = SettingsDialog(
                 config=self.config,
                 on_save=self.on_settings_saved,
+                parent=self.popup,
             )
             self._settings_dialog.finished.connect(self._on_settings_closed)
         self._settings_dialog.show()
         self._settings_dialog.raise_()
         self._settings_dialog.activateWindow()
 
+    def open_provider_settings(self, provider_name: str) -> None:
+        self.open_settings()
+        if self._settings_dialog:
+            self._settings_dialog.select_provider(provider_name)
+
     def _on_settings_closed(self, result: int) -> None:
+        dialog = self._settings_dialog
         self._settings_dialog = None
+        if dialog is not None:
+            dialog.deleteLater()
 
     def open_update_dialog(self) -> None:
-        """打开偏好设置中心并定位到更新选项卡自动检查更新"""
+        """打开设置中心并定位到更新选项卡自动检查更新"""
         self.open_settings()
         if self._settings_dialog:
             self._settings_dialog.trigger_check_update()
@@ -322,14 +436,29 @@ class 言蹊翻译App(QObject):
 
     def on_settings_saved(self, new_config: AppConfig) -> None:
         """设置保存后的热重载"""
+        translation_changed = (
+            self.active_provider_cfg != new_config.get_active_provider()
+            or self.popup._current_provider != new_config.default_provider
+            or self.popup._source_lang != new_config.default_source_lang
+            or self.popup._target_lang != new_config.default_target_lang
+        )
+        self._requests.invalidate()
+        self.popup._input_debounce_timer.stop()
         self.config = new_config
         self.active_provider_cfg = self.config.get_active_provider()
         self.translator = create_translator(self.active_provider_cfg)
+        self.popup.config = self.config.ui
+        self.popup.selection_config = self.config.selection
+        self.tray.config = self.config
+        self.popup.provider_configs = self.config.providers
+        self.popup.on_save_config = self.config.save
+        self.tray.refresh_providers()
 
         # 同步托盘与浮窗的提供商列表与选中状态
-        self.tray.update_active_provider(self.config.default_provider)
         self.popup.available_providers = list(self.config.providers.keys())
-        self.popup.set_active_provider(self.config.default_provider)
+        self._sync_translation_preferences()
+        if self.popup.current_query_text() and (translation_changed or self.popup._current_result is None):
+            self.popup.mark_query_pending()
 
         # 同步主题与透明度
         self.popup.apply_theme(
@@ -357,6 +486,8 @@ class 言蹊翻译App(QObject):
 
     def shutdown(self) -> None:
         """安全释放所有资源"""
+        self._shutting_down = True
+        self._requests.invalidate()
         for listener in self.listeners:
             listener.stop()
         if self._panic_listener:
@@ -390,6 +521,7 @@ def configure_system_font(app: QApplication) -> None:
 
 
 def main() -> None:
+    configure_console_output()
     ensure_xcb_cursor_loaded()
     configure_windows_app_id()
     # 强制无头或者有桌面环境支持

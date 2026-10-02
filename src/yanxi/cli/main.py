@@ -6,6 +6,7 @@
 from __future__ import annotations
 import argparse
 import sys
+from yanxi.adapters.console import configure_console_output
 from yanxi.core.config import AppConfig
 from yanxi.core.models import TranslationRequest
 from yanxi.core.translator.factory import create_translator
@@ -58,6 +59,7 @@ def do_translate(text: str, config: AppConfig, cache: SQLiteCache, source: str, 
 
 
 def main() -> None:
+    configure_console_output()
     args = parse_args()
     config = AppConfig.load()
     cache = SQLiteCache()

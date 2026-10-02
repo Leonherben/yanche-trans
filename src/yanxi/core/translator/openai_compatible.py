@@ -9,6 +9,7 @@ import time
 from typing import Tuple
 import httpx
 from yanxi.core.config import ProviderConfig
+from yanxi.core.provider_state import is_configured
 from yanxi.core.models import TranslationRequest, TranslationResult
 from yanxi.core.translator.base import BaseTranslator
 
@@ -58,7 +59,7 @@ class OpenAICompatibleTranslator(BaseTranslator):
         ]
 
     def translate(self, request: TranslationRequest) -> TranslationResult:
-        if not self.config.api_key and "localhost" not in self.base_url and "127.0.0.1" not in self.base_url:
+        if not is_configured(self.config):
             return TranslationResult(
                 original_text=request.text,
                 translated_text="[Error] 未配置 API Key，请在设置中输入有效的 API 密钥。",

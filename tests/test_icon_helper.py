@@ -1,7 +1,5 @@
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-import pytest
-from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon, QPixmap
 from yanxi.adapters.gui.icon_helper import (
     find_icon_path,
@@ -11,14 +9,6 @@ from yanxi.adapters.gui.icon_helper import (
     create_fallback_icon_pixmap,
     configure_windows_app_id,
 )
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
 
 
 def test_fallback_icon_pixmap(qapp):

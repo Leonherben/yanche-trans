@@ -6,6 +6,7 @@
 """
 
 from __future__ import annotations
+from html import escape
 from typing import Optional, Callable, List
 from PySide6.QtCore import Qt, QPoint, QTimer, Signal, QEvent, QRect
 from PySide6.QtGui import QCursor, QGuiApplication, QKeyEvent, QTextCursor
@@ -30,7 +31,11 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 import pyperclip
-from yanxi.core.config import UIConfig, SelectionConfig
+from yanxi.core.config import UIConfig, SelectionConfig, SelectionMode, ProviderConfig
+from yanxi.core.provider_state import is_configured
+from yanxi.adapters.gui.providers import provider_label, provider_menu_label, add_provider_actions
+from yanxi.adapters.gui.selection_modes import MODE_LABELS, MODE_DESCRIPTIONS, add_mode_actions
+from yanxi.adapters.gui.languages import language_label, add_language_actions
 from yanxi.core.models import TranslationResult
 from yanxi.adapters.gui.theme import (
     AVAILABLE_THEMES,
@@ -579,6 +584,7 @@ class PopupBubble(QWidget):
     show_loading_signal = Signal(str, int, int)
     dismiss_signal = Signal(int, int)
     closed = Signal()
+    query_invalidated = Signal()
 
     def __init__(
         self,
@@ -592,6 +598,12 @@ class PopupBubble(QWidget):
         available_providers: Optional[list[str]] = None,
         default_provider: str = "microsoft",
         on_open_settings: Optional[Callable[[], None]] = None,
+        default_source_lang: str = "auto",
+        default_target_lang: str = "zh-CN",
+        on_source_lang_change: Optional[Callable[[str], None]] = None,
+        on_target_lang_change: Optional[Callable[[str], None]] = None,
+        provider_configs: Optional[dict[str, ProviderConfig]] = None,
+        on_configure_provider: Optional[Callable[[str], None]] = None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -604,6 +616,12 @@ class PopupBubble(QWidget):
         self.on_open_settings = on_open_settings
         self.available_providers = available_providers or ["microsoft", "deepseek", "openai", "zhipu", "custom"]
         self._current_provider = default_provider
+        self.provider_configs = provider_configs or {}
+        self.on_configure_provider = on_configure_provider
+        self._source_lang = default_source_lang
+        self._target_lang = default_target_lang
+        self.on_source_lang_change = on_source_lang_change
+        self.on_target_lang_change = on_target_lang_change
         self._last_requested_text = ""
         self._current_result: Optional[TranslationResult] = None
 
@@ -702,14 +720,23 @@ class PopupBubble(QWidget):
         self.brand_badge.hide()
 
         # Provider 切换胶囊按钮 (清爽无冗余图标)
-        self.provider_btn = QPushButton(f"{self._current_provider} ▾", self)
+        self.provider_btn = QPushButton(f"{provider_label(self._current_provider)} ▾", self)
         self.provider_btn.setObjectName("provider_btn")
         self.provider_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.provider_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.provider_btn.setToolTip("切换翻译引擎")
         self.provider_btn.clicked.connect(self._show_provider_menu)
         self.provider_label = self.provider_btn  # 保持属性兼容
+        self.set_active_provider(self._current_provider)
         top_bar.addWidget(self.provider_btn)
+
+        self.mode_btn = QPushButton(self)
+        self.mode_btn.setObjectName("provider_btn")
+        self.mode_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.mode_btn.clicked.connect(self._show_selection_mode_menu)
+        self._selection_listener_enabled = True
+        self.refresh_selection_mode()
 
         top_bar.addStretch()
 
@@ -737,13 +764,29 @@ class PopupBubble(QWidget):
         self.close_btn = QPushButton("✕", self)
         self.close_btn.setObjectName("close_btn")
         self.close_btn.setFixedSize(26, 26)
-        self.close_btn.setToolTip("关闭")
+        self.close_btn.setToolTip("收起（程序仍在托盘运行）")
+        self.close_btn.setAccessibleName("收起浮窗")
         self.close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.close_btn.clicked.connect(self.hide)
         top_bar.addWidget(self.close_btn)
 
         container_layout.addLayout(top_bar)
+
+        direction_bar = QHBoxLayout()
+        direction_bar.setSpacing(6)
+        self.direction_btn = QPushButton(self)
+        self.direction_btn.setObjectName("provider_btn")
+        self.direction_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.direction_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.direction_btn.setToolTip("切换源语言或目标语言，重译当前原文")
+        self.direction_btn.setAccessibleName("翻译方向")
+        self.direction_btn.clicked.connect(self._show_language_menu)
+        self.set_translation_direction(self._source_lang, self._target_lang)
+        direction_bar.addWidget(self.direction_btn)
+        direction_bar.addStretch()
+        direction_bar.addWidget(self.mode_btn)
+        container_layout.addLayout(direction_bar)
 
         # ==================== 2. 原文卡片 (Original Card) ====================
         self.orig_card = QFrame(self)
@@ -835,6 +878,23 @@ class PopupBubble(QWidget):
         trans_bottom.addWidget(self.copy_btn)
 
         trans_layout.addLayout(trans_bottom)
+
+        self.recovery_bar = QWidget(self)
+        recovery_layout = QHBoxLayout(self.recovery_bar)
+        recovery_layout.setContentsMargins(0, 0, 0, 0)
+        self.retry_btn = QPushButton("重试", self.recovery_bar)
+        self.error_settings_btn = QPushButton("打开设置", self.recovery_bar)
+        for button in (self.retry_btn, self.error_settings_btn):
+            button.setObjectName("subtle_btn")
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            recovery_layout.addWidget(button)
+        recovery_layout.addStretch()
+        self.retry_btn.clicked.connect(self._on_manual_translate_requested)
+        self.error_settings_btn.clicked.connect(self._open_current_provider_settings)
+        trans_layout.addWidget(self.recovery_bar)
+        self.recovery_bar.hide()
+        self.copy_btn.setEnabled(False)
 
         # ==================== 4. 垂直分割器 (QSplitter) ====================
         self.splitter = QSplitter(Qt.Orientation.Vertical, self)
@@ -948,10 +1008,9 @@ class PopupBubble(QWidget):
             self._fixed_pos = None
             self.config.fixed_x = None
             self.config.fixed_y = None
-            if self.config.auto_hide_seconds > 0:
-                self.auto_hide_timer.start(self.config.auto_hide_seconds * 1000)
             self._flash_status("已取消固定")
 
+        self._restart_auto_hide_timer()
         self._update_pin_ui()
         self._save_current_config()
 
@@ -972,23 +1031,37 @@ class PopupBubble(QWidget):
 
         self._save_current_config()
 
-    def _toggle_auto_popup(self, checked: bool) -> None:
-        """切换划选松开自动翻译"""
-        self.selection_config.auto_popup_on_selection = checked
-        self._save_current_config()
-        if self.on_update_selection_config:
-            self.on_update_selection_config()
-        status_text = "划选自动翻译已开启" if checked else "划选自动翻译已关闭"
-        self._flash_status(status_text)
+    def refresh_selection_mode(self, listener_enabled: Optional[bool] = None) -> None:
+        """同步模式标签；暂停状态独立于模式，不因切换模式而恢复取词。"""
+        if listener_enabled is not None:
+            self._selection_listener_enabled = listener_enabled
+        mode = self.selection_config.get_mode()
+        label = MODE_LABELS[mode]
+        if self._selection_listener_enabled:
+            self.mode_btn.setText(f"{label} ▾")
+            self.mode_btn.setToolTip(MODE_DESCRIPTIONS[mode])
+        else:
+            self.mode_btn.setText("取词已暂停 ▾")
+            self.mode_btn.setToolTip(f"当前模式：{label}。请在托盘中恢复取词。")
+        if hasattr(self, "auto_hide_timer"):
+            if self.isVisible():
+                self._restart_auto_hide_timer()
+            else:
+                self.auto_hide_timer.stop()
 
-    def _toggle_auto_popup_only_when_visible(self, checked: bool) -> None:
-        """切换伴随阅读模式（仅浮窗打开时划词翻译）"""
-        self.selection_config.auto_popup_only_when_visible = checked
+    def _show_selection_mode_menu(self) -> None:
+        menu = QMenu(self)
+        menu.setStyleSheet(get_theme_menu_style(get_effective_theme(self._theme)))
+        add_mode_actions(menu, self.selection_config.get_mode(), self._set_selection_mode)
+        menu.exec(self.mode_btn.mapToGlobal(QPoint(0, self.mode_btn.height() + 2)))
+
+    def _set_selection_mode(self, mode: SelectionMode) -> None:
+        self.selection_config.set_mode(mode)
         self._save_current_config()
         if self.on_update_selection_config:
             self.on_update_selection_config()
-        status_text = "伴随阅读模式已开启 (仅浮窗打开时划词)" if checked else "全时划词模式已开启"
-        self._flash_status(status_text)
+        self.refresh_selection_mode()
+        self._flash_status(f"已切换为{MODE_LABELS[self.selection_config.get_mode()]}")
 
     def _toggle_mouse_side_button(self, checked: bool) -> None:
         """切换鼠标侧键取词触发"""
@@ -1099,23 +1172,23 @@ class PopupBubble(QWidget):
             self._flash_status("已复制原文")
 
     def _copy_result(self) -> None:
-        text = ""
-        if self._current_result and self._current_result.translated_text:
-            text = self._current_result.translated_text
-        if not text:
-            raw = self.text_browser.toPlainText().strip()
-            if raw and raw != "正在翻译...":
-                text = raw
+        if self._current_result and self._current_result.is_success():
+            self._safe_copy_to_clipboard(self._current_result.translated_text)
+            self._flash_status("已复制译文")
 
-        if text:
-            self._safe_copy_to_clipboard(text)
-            if text.startswith("[Error]"):
-                self._flash_status("已复制错误提示")
-            else:
-                self._flash_status("已复制译文")
+    def _open_current_provider_settings(self) -> None:
+        if self.on_configure_provider:
+            self.on_configure_provider(self._current_provider)
+        elif self.on_open_settings:
+            self.on_open_settings()
 
     def _on_original_text_changed(self) -> None:
         """用户在输入框手动修改或粘贴文本时的响应"""
+        self.query_invalidated.emit()
+        self._input_debounce_timer.stop()
+        self._current_result = None
+        self.copy_btn.setEnabled(False)
+        self.recovery_bar.hide()
         text = self.original_edit.toPlainText().strip()
         has_text = bool(text)
         self.clear_orig_btn.setVisible(has_text)
@@ -1123,13 +1196,21 @@ class PopupBubble(QWidget):
         self.orig_meta_label.setText(self._format_meta(text))
 
         if text:
-            if text != self._last_requested_text:
+            self.text_browser.clear()
+            self.latency_label.setText("")
+            self.status_msg.setText("原文已修改，待重新翻译")
+            if self.config.auto_translate_input:
                 self._input_debounce_timer.start(600)
         else:
             self._input_debounce_timer.stop()
             self.text_browser.clear()
             self.latency_label.setText("")
             self.status_msg.setText("")
+
+    def mark_query_pending(self) -> None:
+        """设置应用后标记待重译，保留当前原文，不自动发出新请求。"""
+        self._on_original_text_changed()
+        self._input_debounce_timer.stop()
 
     def _on_manual_translate_requested(self) -> None:
         """用户敲击回车或点击'翻译'按钮或输入防抖结束时触发翻译"""
@@ -1145,6 +1226,7 @@ class PopupBubble(QWidget):
 
     def _clear_input(self) -> None:
         """一键清空输入框与结果"""
+        self.query_invalidated.emit()
         self._input_debounce_timer.stop()
         self.original_edit.clear()
         self.text_browser.clear()
@@ -1153,12 +1235,15 @@ class PopupBubble(QWidget):
         self.orig_meta_label.setText("0 字符")
         self._last_requested_text = ""
         self._current_result = None
+        self.copy_btn.setEnabled(False)
+        self.recovery_bar.hide()
         self.clear_orig_btn.hide()
         self.translate_btn.hide()
         self.original_edit.setFocus()
 
     def open_for_input(self) -> None:
         """主动打开浮窗，聚焦于原文输入框，供用户手动键入或复制粘贴查词"""
+        self.query_invalidated.emit()
         self._input_debounce_timer.stop()
         self.original_edit.clear()
         self.text_browser.clear()
@@ -1167,6 +1252,8 @@ class PopupBubble(QWidget):
         self.orig_meta_label.setText("0 字符")
         self._last_requested_text = ""
         self._current_result = None
+        self.copy_btn.setEnabled(False)
+        self.recovery_bar.hide()
         self.clear_orig_btn.hide()
         self.translate_btn.hide()
 
@@ -1207,17 +1294,8 @@ class PopupBubble(QWidget):
 
         menu.addSeparator()
 
-        # 3. 划选自动翻译
-        act_auto_pop = menu.addAction("划选自动翻译")
-        act_auto_pop.setCheckable(True)
-        act_auto_pop.setChecked(self.selection_config.auto_popup_on_selection)
-        act_auto_pop.triggered.connect(self._toggle_auto_popup)
-
-        act_visible_only = menu.addAction("  ↳ 伴随阅读 (仅浮窗打开时划词)")
-        act_visible_only.setCheckable(True)
-        act_visible_only.setChecked(self.selection_config.auto_popup_only_when_visible)
-        act_visible_only.setEnabled(self.selection_config.auto_popup_on_selection)
-        act_visible_only.triggered.connect(self._toggle_auto_popup_only_when_visible)
+        mode_menu = menu.addMenu("取词模式")
+        add_mode_actions(mode_menu, self.selection_config.get_mode(), self._set_selection_mode)
 
         # 4. 鼠标侧键触发开关
         act_side = menu.addAction("鼠标侧键触发")
@@ -1297,9 +1375,9 @@ class PopupBubble(QWidget):
 
         menu.addSeparator()
 
-        # 8. 偏好设置
+        # 8. 设置
         if self.on_open_settings:
-            act_settings = menu.addAction("⚙ 偏好设置...")
+            act_settings = menu.addAction("⚙ 设置...")
             act_settings.triggered.connect(self.on_open_settings)
 
         # 9. 恢复默认尺寸
@@ -1324,45 +1402,91 @@ class PopupBubble(QWidget):
             self.on_clear_cache()
             self._flash_status("本地缓存已清空")
 
-    def _show_provider_menu(self) -> None:
-        """点击浮窗左上角小图标，弹出可供选择的翻译引擎菜单"""
+    def _create_provider_menu(self) -> QMenu:
         effective = get_effective_theme(self._theme)
         menu = QMenu(self)
         menu.setStyleSheet(get_theme_menu_style(effective))
 
-        curr = self._current_provider
-        for p in self.available_providers:
-            mark = "✓ " if p == curr else "   "
-            act = menu.addAction(f"{mark}{p}")
-            act.triggered.connect(lambda checked, name=p: self._handle_provider_switch(name))
+        add_provider_actions(menu, self.available_providers, self.provider_configs,
+                             self._current_provider, self._handle_provider_switch)
 
         if self.on_open_settings:
             menu.addSeparator()
             act_manage = menu.addAction("⚙ 管理服务与 API Key...")
             act_manage.triggered.connect(self.on_open_settings)
 
+        return menu
+
+    def _show_provider_menu(self) -> None:
+        menu = self._create_provider_menu()
+
         pos = self.provider_btn.mapToGlobal(QPoint(0, self.provider_btn.height() + 2))
         menu.exec(pos)
+        menu.deleteLater()
 
     def _handle_provider_switch(self, provider_name: str) -> None:
-        self._current_provider = provider_name
-        self.provider_btn.setText(f"{provider_name} ▾")
+        config = self.provider_configs.get(provider_name)
+        if config and not is_configured(config):
+            if self.on_configure_provider:
+                self.on_configure_provider(provider_name)
+            return
+        if provider_name == self._current_provider:
+            return
         if self.on_switch_provider:
-            text_to_translate = self._last_requested_text or (
-                self._current_result.original_text if self._current_result else ""
-            )
-            self.on_switch_provider(provider_name, text_to_translate)
+            self.on_switch_provider(provider_name, self.current_query_text())
+        self.set_active_provider(provider_name)
+
+    def current_query_text(self) -> str:
+        return self.original_edit.toPlainText().strip()
+
+    def set_translation_direction(self, source: str, target: str) -> None:
+        self._source_lang, self._target_lang = source, target
+        self.direction_btn.setText(f"{language_label(source)} → {language_label(target)} ▾")
+
+    def _create_language_menu(self) -> QMenu:
+        menu = QMenu(self)
+        menu.setStyleSheet(get_theme_menu_style(get_effective_theme(self._theme)))
+        source_menu = menu.addMenu("源语言")
+        target_menu = menu.addMenu("目标语言")
+        add_language_actions(source_menu, self._source_lang, self._handle_source_lang_change, source=True)
+        add_language_actions(target_menu, self._target_lang, self._handle_target_lang_change)
+        return menu
+
+    def _show_language_menu(self) -> None:
+        menu = self._create_language_menu()
+        menu.exec(self.direction_btn.mapToGlobal(QPoint(0, self.direction_btn.height() + 2)))
+        menu.deleteLater()
+
+    def _handle_source_lang_change(self, code: str) -> None:
+        if code == self._source_lang:
+            return
+        if self.on_source_lang_change:
+            self.on_source_lang_change(code)
+        self.set_translation_direction(code, self._target_lang)
+
+    def _handle_target_lang_change(self, code: str) -> None:
+        if code == self._target_lang:
+            return
+        if self.on_target_lang_change:
+            self.on_target_lang_change(code)
+        self.set_translation_direction(self._source_lang, code)
 
     def set_active_provider(self, provider_name: str) -> None:
         """更新当前生效的翻译引擎显示"""
         self._current_provider = provider_name
         if hasattr(self, "provider_btn"):
-            self.provider_btn.setText(f"{provider_name} ▾")
+            self.provider_btn.setText(f"{provider_label(provider_name)} ▾")
+            self.provider_btn.setToolTip(provider_menu_label(provider_name, self.provider_configs.get(provider_name)) + "；点击切换引擎")
 
     def display_loading(self, text: str, cursor_x: int, cursor_y: int) -> None:
         """显示加载状态并智能定位（未固定时避让光标，固定时坚守坐标）"""
+        self._input_debounce_timer.stop()
+        self.auto_hide_timer.stop()
+        self._current_result = None
+        self.copy_btn.setEnabled(False)
+        self.recovery_bar.hide()
         self._last_requested_text = text
-        self.provider_btn.setText(f"{self._current_provider} ▾")
+        self.set_active_provider(self._current_provider)
         self.latency_label.setText("正在翻译...")
         self.status_msg.setText("")
 
@@ -1404,8 +1528,9 @@ class PopupBubble(QWidget):
         self._current_result = result
         self._current_provider = result.provider
         self._last_requested_text = result.original_text
+        self.status_msg.clear()
 
-        self.provider_btn.setText(f"{result.provider} ▾")
+        self.set_active_provider(result.provider)
         if result.from_cache:
             self.latency_label.setText("本地缓存")
         else:
@@ -1420,19 +1545,25 @@ class PopupBubble(QWidget):
         self.translate_btn.setVisible(has_text)
 
         if not result.is_success():
-            html_err = result.translated_text.replace("\n", "<br>")
+            message = result.translated_text.removeprefix("[Error]").strip() or "翻译失败，请重试。"
+            html_err = escape(message).replace("\n", "<br>")
             self.text_browser.setHtml(
                 f"<span style='color: #f85149; font-weight: 500;'>{html_err}</span>"
             )
+            self.copy_btn.setEnabled(False)
+            self.error_settings_btn.setVisible(bool(self.on_configure_provider or self.on_open_settings))
+            self.recovery_bar.show()
         else:
             self.text_browser.setMarkdown(result.translated_text)
+            self.copy_btn.setEnabled(True)
+            self.recovery_bar.hide()
 
-        if self._is_pinned or getattr(self.selection_config, "auto_popup_only_when_visible", True):
+        if self._is_pinned or self.selection_config.get_mode() == SelectionMode.COMPANION:
             if self._is_pinned and self._fixed_pos is not None:
                 self.move(self._fixed_pos)
             self.auto_hide_timer.stop()
-        elif self.config.auto_hide_seconds > 0:
-            self.auto_hide_timer.start(self.config.auto_hide_seconds * 1000)
+        else:
+            self._restart_auto_hide_timer()
 
         self.show()
 
@@ -1441,7 +1572,7 @@ class PopupBubble(QWidget):
         if not self.isVisible() or self._is_pinned:
             return
         # 伴随阅读模式下，用户需要在文档/浏览器中频繁划选，点击外部绝不自动收起，由 Esc 或 ✕ 主动关闭
-        if getattr(self.selection_config, "auto_popup_only_when_visible", True):
+        if self.selection_config.get_mode() == SelectionMode.COMPANION:
             return
 
         mouse_pos = QCursor.pos()
@@ -1449,6 +1580,8 @@ class PopupBubble(QWidget):
             self.hide()
 
     def hideEvent(self, event) -> None:
+        self._input_debounce_timer.stop()
+        self.auto_hide_timer.stop()
         self.closed.emit()
         super().hideEvent(event)
 
@@ -1660,10 +1793,18 @@ class PopupBubble(QWidget):
 
     def leaveEvent(self, event) -> None:
         """鼠标移出浮窗后若未钉住则重启自动收起"""
-        if not self._is_pinned and self.config.auto_hide_seconds > 0:
-            self.auto_hide_timer.start(self.config.auto_hide_seconds * 1000)
+        self._restart_auto_hide_timer()
         self.unsetCursor()
         super().leaveEvent(event)
+
+    def _restart_auto_hide_timer(self) -> None:
+        self.auto_hide_timer.stop()
+        if (
+            not self._is_pinned
+            and self.selection_config.get_mode() != SelectionMode.COMPANION
+            and self.config.auto_hide_seconds > 0
+        ):
+            self.auto_hide_timer.start(self.config.auto_hide_seconds * 1000)
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:

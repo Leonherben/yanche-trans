@@ -1,20 +1,10 @@
-"""偏好设置中心 SettingsDialog 单元测试"""
+"""设置中心 SettingsDialog 单元测试"""
 
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import pytest
-from PySide6.QtWidgets import QApplication
-from yanxi.core.config import AppConfig
+from yanxi.core.config import AppConfig, SelectionMode
 from yanxi.adapters.gui.settings_dialog import SettingsDialog
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    yield app
 
 
 def test_settings_dialog_init(qapp, tmp_path):
@@ -30,14 +20,16 @@ def test_settings_dialog_init(qapp, tmp_path):
 
     assert dialog.tab_widget.count() == 4
     assert dialog.provider_combo.count() >= 5
-    assert dialog.provider_combo.currentText() == "microsoft"
+    assert dialog.provider_combo.currentData() == "microsoft"
+    assert "微软翻译" in dialog.provider_combo.currentText()
     assert dialog.default_check.isChecked()
 
     # 验证快捷键 Tab 预填
     assert dialog.main_hotkey_edit.text() == "<alt>+d"
     assert dialog.mouse_side_check.isChecked()
-    assert dialog.auto_popup_check.isChecked() is True
-    assert dialog.auto_popup_visible_only_check.isChecked() is True
+    assert dialog.selection_mode_combo.currentData() == SelectionMode.COMPANION
+    assert "仅浮窗打开时" in dialog.selection_mode_hint.text()
+    assert dialog.windowTitle() == "言蹊翻译 - 设置"
 
     # 验证选项卡切换与更新 Tab
     dialog.switch_to_tab(3)
@@ -60,7 +52,7 @@ def test_settings_dialog_modify_and_save(qapp, tmp_path):
     )
 
     # 1. 切换为 deepseek 并修改 API Key 和模型
-    dialog.provider_combo.setCurrentText("deepseek")
+    dialog.select_provider("deepseek")
     dialog.key_edit.setText("sk-test-deepseek-key-123")
     dialog.model_edit.setText("deepseek-coder")
     dialog.default_check.click()  # 设为默认
@@ -69,7 +61,9 @@ def test_settings_dialog_modify_and_save(qapp, tmp_path):
     dialog.main_hotkey_edit.setText("<alt>+f")
     dialog.new_hotkey_edit.setText("ctrl+alt+w")
     dialog.add_hotkey_btn.click()
-    dialog.auto_popup_visible_only_check.setChecked(False)
+    dialog.selection_mode_combo.setCurrentIndex(
+        dialog.selection_mode_combo.findData(SelectionMode.AUTOMATIC)
+    )
     assert dialog.extra_hotkeys_list.count() == 1
     assert dialog.extra_hotkeys_list.item(0).text() == "<ctrl>+<alt>+<w>"
 

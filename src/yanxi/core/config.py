@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from enum import Enum
 from pathlib import Path
 from typing import Dict, Optional
 from pydantic import BaseModel, Field
@@ -28,6 +29,14 @@ class ProviderConfig(BaseModel):
     )
 
 
+class SelectionMode(str, Enum):
+    """互斥取词模式；由旧布尔配置推导，避免重复持久化。"""
+
+    MANUAL = "manual"
+    AUTOMATIC = "automatic"
+    COMPANION = "companion"
+
+
 class SelectionConfig(BaseModel):
     """划词触发策略配置"""
     enable_x11_primary: bool = True  # Linux 下是否加载 X11 选区服务
@@ -40,6 +49,18 @@ class SelectionConfig(BaseModel):
     extra_hotkeys: list[str] = Field(default_factory=list)  # 额外绑定的多快捷键
     enable_mouse_side_button: bool = True  # 启用鼠标侧键 (X1/X2) 划词取词触发
     panic_hotkey: str = "<ctrl>+<alt>+<esc>"  # 紧急逃生键
+
+    def get_mode(self) -> SelectionMode:
+        if not self.auto_popup_on_selection:
+            return SelectionMode.MANUAL
+        if self.auto_popup_only_when_visible:
+            return SelectionMode.COMPANION
+        return SelectionMode.AUTOMATIC
+
+    def set_mode(self, mode: SelectionMode | str) -> None:
+        mode = SelectionMode(mode)
+        self.auto_popup_on_selection = mode != SelectionMode.MANUAL
+        self.auto_popup_only_when_visible = mode == SelectionMode.COMPANION
 
     def get_all_hotkeys(self) -> list[str]:
         """获取所有已启用的快捷键列表（去重且保序）"""
@@ -86,6 +107,7 @@ class UIConfig(BaseModel):
     auto_hide_seconds: int = 8       # 失去交互后自动收起秒数（0表示不自动收起）
     window_opacity: float = 0.95     # 窗口透明度 (0.4 ~ 1.0)
     open_on_startup: bool = True     # 打开应用时是否自动展示悬浮窗 (默认开启)
+    auto_translate_input: bool = True  # 保留输入后自动翻译；关闭时回车或按钮提交
 
 
 class UpdateConfig(BaseModel):
