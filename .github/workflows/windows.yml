@@ -1,9 +1,9 @@
-name: UX Windows Package
+name: Windows Package & Tests
 
 on:
   push:
     branches:
-      - ux-reading-modes
+      - main
   workflow_dispatch:
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
           uv python install 3.12
           uv sync --frozen --dev
       - name: Build Windows package
-        run: uv run --no-sync python scripts/build.py --label ux-20261002
+        run: uv run --no-sync python scripts/build.py
       - name: Verify packaged CLI
         shell: pwsh
         run: |
@@ -40,7 +40,7 @@ jobs:
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
-          name: yanxi-ux-windows-${{ github.sha }}
+          name: yanxi-windows-${{ github.sha }}
           path: dist/*.zip
           if-no-files-found: error
           retention-days: 14
@@ -64,11 +64,24 @@ jobs:
           uv sync --frozen --dev
       - name: Test with process timeout
         timeout-minutes: 3
-        run: >-
-          uv run --no-sync python -c "import subprocess, sys;
-          log = open('ci-tests.log', 'w', encoding='utf-8');
-          result = subprocess.run([sys.executable, '-m', 'pytest', '-vv', '-o', 'faulthandler_timeout=45', 'tests', '--tb=short'], stdout=log, stderr=subprocess.STDOUT, timeout=90);
-          log.close(); sys.exit(result.returncode)"
+        shell: pwsh
+        run: |
+          $testScript = @'
+          import ctypes
+          import subprocess
+          import sys
+
+          # 子进程继承此设置，原生异常直接退出并记录日志，避免无桌面的 CI 等待错误对话框。
+          ctypes.windll.kernel32.SetErrorMode(0x8003)
+          with open('ci-tests.log', 'w', encoding='utf-8') as log:
+              result = subprocess.run(
+                  [sys.executable, '-m', 'pytest', '-vv', '-o', 'faulthandler_timeout=45', 'tests', '--tb=short'],
+                  stdout=log, stderr=subprocess.STDOUT, timeout=90,
+              )
+          sys.exit(result.returncode)
+          '@
+          uv run --no-sync python -c $testScript
+          exit $LASTEXITCODE
       - name: Upload test diagnostics
         if: always()
         uses: actions/upload-artifact@v4

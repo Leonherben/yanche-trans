@@ -9,7 +9,7 @@ on:
       tag_name:
         description: 'Release Tag Name (e.g. v0.1.0)'
         required: false
-        default: 'v0.1.0'
+        default: 'v0.1.8'
 
 permissions:
   contents: write
@@ -51,10 +51,10 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies & PyInstaller
-        run: uv sync --dev
+        run: uv sync --frozen --dev
 
       - name: Build standalone release package
-        run: uv run python scripts/build.py
+        run: uv run --no-sync python scripts/build.py
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4

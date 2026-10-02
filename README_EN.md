@@ -6,6 +6,8 @@
 
 A lightweight, blazing-fast cross-platform desktop text-selection translation tool supporting Linux (X11) and Windows.
 
+Current source version: **v0.1.8**. See the [release notes (Chinese)](docs/release-0.1.8.md) for the interaction improvements.
+
 Named after the Chinese proverb *"Peaches and plums do not speak, yet a path is formed beneath them"* (signifying quiet excellence). It comes with built-in free Microsoft Translator (works out of the box without any API key or account registration), while supporting seamless integration with modern LLMs such as DeepSeek, OpenAI, Zhipu GLM, and local Ollama. The floating bubble utilizes a focus-preserving, always-on-top architecture that never steals keyboard focus from your terminal, code editor, or writing apps.
 
 ---

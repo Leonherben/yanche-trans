@@ -210,7 +210,7 @@ def prune_bundle(bundle_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--label", default="", help="本地构建标识，如 ux-20261002；不修改上游版本号")
+    parser.add_argument("--label", default="", help="可选构建标识，如 preview；不修改版本号")
     label = parser.parse_args().label
     if label and not re.fullmatch(r"[a-zA-Z0-9-]+", label):
         parser.error("构建标识只能包含字母、数字和连字符")
@@ -277,9 +277,9 @@ def main() -> None:
 
     if label:
         archive_name = archive_name.replace(f"v{version}-", f"v{version}-{label}-", 1)
-        trial_notes = project_root / "docs" / "ux-trial.md"
-        if trial_notes.exists():
-            shutil.copy2(trial_notes, bundle_dir / "交互改进说明.md")
+    release_notes = project_root / "docs" / f"release-{version}.md"
+    if release_notes.exists():
+        shutil.copy2(release_notes, bundle_dir / "更新说明.md")
     (bundle_dir / "BUILD_INFO.json").write_text(
         json.dumps({"base_version": version, "build_label": label, "platform": platform_name},
                    ensure_ascii=False, indent=2), encoding="utf-8"
