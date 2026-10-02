@@ -80,8 +80,8 @@ class 言蹊翻译Tray(QSystemTrayIcon):
     def _build_menu(self) -> None:
         menu = QMenu()
 
-        # 0. 主动输入查词
-        input_action = QAction("输入查词...", menu)
+        # 0. 主动打开翻译窗
+        input_action = QAction("打开翻译窗", menu)
         input_action.triggered.connect(self._handle_open_input)
         menu.addAction(input_action)
 

@@ -62,7 +62,7 @@ def test_saved_key_refreshes_menus_and_preserves_provider_codes(controller):
     dialog._on_save_clicked()
     assert controller.config.default_provider == "deepseek"
     assert controller.config.providers["deepseek"].api_key == "test-key"
-    assert controller.popup.provider_btn.text() == "DeepSeek ▾"
+    assert controller.popup.provider_btn.text() == "DeepSeek"
     action = controller.tray.provider_actions["deepseek"]
     assert "已配置密钥" in action.text()
     assert action.isChecked()

@@ -48,7 +48,7 @@ def test_mode_menu_is_exclusive_and_routes_selected_mode(qapp):
 
 
 def test_companion_mode_survives_mouse_leave_and_unpin(qapp):
-    popup = PopupBubble(UIConfig(), selection_config=SelectionConfig())
+    popup = PopupBubble(UIConfig(is_pinned=False), selection_config=SelectionConfig())
     popup.show()
     popup.leaveEvent(QEvent(QEvent.Type.Leave))
     assert not popup.auto_hide_timer.isActive()
@@ -110,5 +110,5 @@ def test_settings_apply_updates_popup_references_and_tray(controller):
     assert controller.popup.selection_config is controller.config.selection
     assert controller.popup.selection_config is not previous_selection
     assert controller.popup.config is controller.config.ui
-    assert "快捷键查词" in controller.popup.mode_btn.text()
+    assert "快捷键翻译" in controller.popup.mode_btn.text()
     assert controller.tray.mode_actions[SelectionMode.MANUAL].isChecked()

@@ -35,6 +35,7 @@ hiddenimports = [
     "yanxi.adapters.gui.tray",
     "yanxi.adapters.gui.theme",
     "yanxi.adapters.gui.settings_dialog",
+    "yanxi.adapters.gui.windows_effects",
     "yanxi.adapters.selection.base",
     "yanxi.adapters.selection.linux_x11",
     "yanxi.adapters.selection.windows",

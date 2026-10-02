@@ -46,7 +46,7 @@ def test_edit_clears_copy_source_and_marks_pending(qapp, automatic):
 
 
 def test_reverting_to_previous_query_restarts_debounce(qapp):
-    popup = PopupBubble(UIConfig())
+    popup = PopupBubble(UIConfig(auto_translate_input=True))
     popup.display_loading("old", 0, 0)
     popup.original_edit.setPlainText("draft")
     popup.original_edit.setPlainText("old")
@@ -87,13 +87,13 @@ def test_open_new_input_removes_error_recovery_controls(qapp):
 
 def test_input_setting_defaults_preserve_old_behavior_and_cancel_does_not_apply(qapp):
     config = AppConfig.model_validate({"ui": {}})
-    assert config.ui.auto_translate_input
-    dialog = SettingsDialog(config)
-    dialog.auto_translate_input_check.setChecked(False)
-    dialog.reject()
-    assert config.ui.auto_translate_input
-    dialog = SettingsDialog(config)
-    dialog.auto_translate_input_check.setChecked(False)
-    dialog._on_save_clicked()
     assert not config.ui.auto_translate_input
-    assert not AppConfig.load().ui.auto_translate_input
+    dialog = SettingsDialog(config)
+    dialog.auto_translate_input_check.setChecked(True)
+    dialog.reject()
+    assert not config.ui.auto_translate_input
+    dialog = SettingsDialog(config)
+    dialog.auto_translate_input_check.setChecked(True)
+    dialog._on_save_clicked()
+    assert config.ui.auto_translate_input
+    assert AppConfig.load().ui.auto_translate_input

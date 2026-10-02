@@ -103,7 +103,7 @@ def test_popup_display_error(qapp):
 def test_popup_dismiss_if_outside(qapp):
     from PySide6.QtGui import QCursor
     from yanxi.core.config import SelectionConfig
-    config = UIConfig()
+    config = UIConfig(is_pinned=False)
 
     # 1. 经典非伴随模式 (auto_popup_only_when_visible=False)
     classic_sel = SelectionConfig(auto_popup_only_when_visible=False)
@@ -173,7 +173,7 @@ def test_popup_card_components(qapp):
 
 
 def test_popup_pin_and_fixed_position(qapp):
-    config = UIConfig()
+    config = UIConfig(is_pinned=False)
     saved = []
     popup = PopupBubble(config, on_save_config=lambda: saved.append(True))
 

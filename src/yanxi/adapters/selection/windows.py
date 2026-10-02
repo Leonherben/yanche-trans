@@ -48,6 +48,8 @@ class WindowsSelectionListener(BaseSelectionListener):
         self.enable_mouse_side_button = enable_mouse_side_button
         self._last_selected_text: str = ""
         self._last_trigger_time: float = 0.0
+        self._last_right_click_time: float = 0.0
+        self._cancel_selection_flag = threading.Event()
 
         # 手势识别追踪
         self._press_pos: Optional[Tuple[int, int]] = None
@@ -60,6 +62,39 @@ class WindowsSelectionListener(BaseSelectionListener):
         self._mouse_listener: Optional[mouse.Listener] = None
         self._stop_event = threading.Event()
 
+    @staticmethod
+    def _is_context_menu_active() -> bool:
+        """检查 Windows 系统当前是否正处于右键菜单/弹出菜单模式"""
+        if sys.platform != "win32":
+            return False
+        try:
+            import ctypes, ctypes.wintypes
+            user32 = ctypes.windll.user32
+            # 1. 检查是否存在系统菜单窗口 (Windows 内部类名 #32768)
+            if user32.FindWindowW("#32768", None) != 0:
+                return True
+            # 2. 检查前台线程是否处于菜单模式 (GUI_POPUPMENUMODE = 0x10, GUI_INMENUMODE = 0x4)
+            class GUITHREADINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.wintypes.DWORD),
+                    ("flags", ctypes.wintypes.DWORD),
+                    ("hwndActive", ctypes.wintypes.HWND),
+                    ("hwndFocus", ctypes.wintypes.HWND),
+                    ("hwndCapture", ctypes.wintypes.HWND),
+                    ("hwndMenuOwner", ctypes.wintypes.HWND),
+                    ("hwndMoveSize", ctypes.wintypes.HWND),
+                    ("hwndCaret", ctypes.wintypes.HWND),
+                    ("rcCaret", ctypes.wintypes.RECT),
+                ]
+            gti = GUITHREADINFO()
+            gti.cbSize = ctypes.sizeof(GUITHREADINFO)
+            if user32.GetGUIThreadInfo(0, ctypes.byref(gti)):
+                if gti.flags & 0x14:
+                    return True
+        except Exception:
+            pass
+        return False
+
     def on_popup_closed(self) -> None:
         """当浮窗被用户关闭/收起时进入冷却，避免点击关闭按钮的动作误触发选词"""
         super().on_popup_closed()
@@ -70,38 +105,42 @@ class WindowsSelectionListener(BaseSelectionListener):
         self.on_popup_closed()
 
     def _release_modifier_keys(self) -> None:
-        """显式释放修饰键，防止 Alt/Ctrl 粘滞影响复制或激活菜单栏"""
+        """若 Alt 被物理按住则显式释放，防止激活系统菜单栏；绝不随意释放 Ctrl/Shift 破坏用户复制与选区"""
         if sys.platform == "win32":
             try:
                 import ctypes
                 user32 = ctypes.windll.user32
-                # VK_MENU (Alt)=0x12, VK_CONTROL=0x11, VK_SHIFT=0x10, KEYEVENTF_KEYUP=0x0002
-                user32.keybd_event(0x12, 0, 0x0002, 0)
-                user32.keybd_event(0x11, 0, 0x0002, 0)
-                user32.keybd_event(0x10, 0, 0x0002, 0)
+                # VK_MENU (Alt) = 0x12
+                if user32.GetAsyncKeyState(0x12) & 0x8000:
+                    user32.keybd_event(0x12, 0, 0x0002, 0)
             except Exception:
                 pass
-        try:
-            self._keyboard_controller.release(keyboard.Key.alt)
-            self._keyboard_controller.release(keyboard.Key.alt_l)
-            self._keyboard_controller.release(keyboard.Key.alt_r)
-            self._keyboard_controller.release(keyboard.Key.ctrl)
-            self._keyboard_controller.release(keyboard.Key.shift)
-        except Exception:
-            pass
 
     def _send_ctrl_c(self) -> None:
-        """Windows 下发送标准的 Ctrl+C 复制按键序列"""
+        """Windows 下发送标准的 Ctrl+C 复制按键序列，智能感知物理按键状态并彻底杜绝按键粘连"""
         if sys.platform == "win32":
             try:
                 import ctypes
                 user32 = ctypes.windll.user32
-                # VK_CONTROL = 0x11, 'C' = 0x43
-                user32.keybd_event(0x11, 0, 0, 0)         # Ctrl down
-                user32.keybd_event(0x43, 0, 0, 0)         # C down
+                # 若鼠标右键正被按住，或系统正处于右键菜单中，或最近触发了右键，绝不发送按键破坏菜单
+                if (
+                    (user32.GetAsyncKeyState(0x02) & 0x8000)
+                    or (time.time() - self._last_right_click_time < 0.8)
+                    or self._cancel_selection_flag.is_set()
+                    or self._is_context_menu_active()
+                ):
+                    return
+
+                vk_ctrl = 0x11
+                vk_c = 0x43
+                scan_ctrl = user32.MapVirtualKeyW(vk_ctrl, 0)
+                scan_c = user32.MapVirtualKeyW(vk_c, 0)
+
+                user32.keybd_event(vk_ctrl, scan_ctrl, 0, 0)
+                user32.keybd_event(vk_c, scan_c, 0, 0)
                 time.sleep(0.01)
-                user32.keybd_event(0x43, 0, 0x0002, 0)    # C up
-                user32.keybd_event(0x11, 0, 0x0002, 0)    # Ctrl up
+                user32.keybd_event(vk_c, scan_c, 0x0002, 0)
+                user32.keybd_event(vk_ctrl, scan_ctrl, 0x0002, 0)
                 return
             except Exception:
                 pass
@@ -115,20 +154,47 @@ class WindowsSelectionListener(BaseSelectionListener):
             pass
 
     def _capture_selected_text_via_clipboard(self) -> str:
-        """通过剪贴板安全捕获当前选中文本，并异步恢复原剪贴板内容"""
+        """通过剪贴板高效捕获当前选中文本，绝不回写覆盖用户的剪贴板"""
+        if (
+            self._cancel_selection_flag.is_set()
+            or (time.time() - self._last_right_click_time < 0.8)
+            or self._is_context_menu_active()
+        ):
+            return ""
+
         old_text = ""
         try:
             old_text = pyperclip.paste()
         except Exception:
             pass
 
+        if (
+            self._cancel_selection_flag.is_set()
+            or (time.time() - self._last_right_click_time < 0.8)
+            or self._is_context_menu_active()
+        ):
+            return ""
+
         self._release_modifier_keys()
         time.sleep(0.015)
+
+        if (
+            self._cancel_selection_flag.is_set()
+            or (time.time() - self._last_right_click_time < 0.8)
+            or self._is_context_menu_active()
+        ):
+            return ""
+
         self._send_ctrl_c()
 
         # 动态轮询等待剪贴板刷新 (最多 180ms)
         new_text = ""
         for _ in range(6):
+            if (
+                self._cancel_selection_flag.is_set()
+                or (time.time() - self._last_right_click_time < 0.8)
+            ):
+                return ""
             time.sleep(0.03)
             try:
                 curr = pyperclip.paste()
@@ -143,21 +209,17 @@ class WindowsSelectionListener(BaseSelectionListener):
             except Exception:
                 new_text = ""
 
-        # 异步恢复原剪贴板，绝不污染用户剪贴历史
-        if old_text and old_text != new_text:
-            def _restore():
-                time.sleep(0.5)
-                try:
-                    pyperclip.copy(old_text)
-                except Exception:
-                    pass
-            threading.Thread(target=_restore, daemon=True).start()
-
         return new_text
 
     def _on_click(self, x: int, y: int, button: mouse.Button, pressed: bool) -> None:
         """处理鼠标点击与释放事件"""
         if not self._is_running:
+            return
+
+        # 0. 鼠标右键：最高优先级拦截！无论任何状态，右键发生时立即记录时间戳并打断提取流程
+        if button == mouse.Button.right:
+            self._last_right_click_time = time.time()
+            self._cancel_selection_flag.set()
             return
 
         # 1. 冷却保护期内（例如刚关闭了窗口），不响应
@@ -186,6 +248,7 @@ class WindowsSelectionListener(BaseSelectionListener):
         # 4. 鼠标左键划选与双击手势
         if button == mouse.Button.left:
             if pressed:
+                self._cancel_selection_flag.clear()
                 self._press_pos = (int(x), int(y))
                 self._press_time = time.time()
             else:
@@ -214,6 +277,13 @@ class WindowsSelectionListener(BaseSelectionListener):
                 is_drag_selection = (drag_distance >= 6)
 
                 if is_drag_selection or is_double_click:
+                    # 若刚刚发生了右键点击或系统菜单处于激活状态，坚决不启动划词提取
+                    if (
+                        self._cancel_selection_flag.is_set()
+                        or (now - self._last_right_click_time < 0.8)
+                        or self._is_context_menu_active()
+                    ):
+                        return
                     if self.auto_popup:
                         # 伴随阅读模式：仅在浮窗可见时才自动划词翻译
                         if self.auto_popup_only_when_visible and self.is_popup_visible and not self.is_popup_visible():
@@ -222,15 +292,32 @@ class WindowsSelectionListener(BaseSelectionListener):
                             target=self._process_selection, args=(x, y, False), daemon=True
                         ).start()
                 else:
-                    # 单击空白处：触发收起悬浮窗
-                    if self.on_empty_click:
-                        self.on_empty_click((int(x), int(y)))
+                    # 单击空白处：若用户最近 1.5s 正在使用右键菜单或系统正处于右键菜单中，绝不收起
+                    if (now - self._last_right_click_time >= 1.5) and not self._is_context_menu_active():
+                        if self.on_empty_click:
+                            self.on_empty_click((int(x), int(y)))
 
     def _process_selection(self, x: int, y: int, force: bool = False) -> None:
         """执行选词提取流水线"""
+        # 1. 渐进式防抖轮询：一旦用户在防抖期内按下右键，立即退出，零按键干扰
         if not force and self.debounce_ms > 0:
-            time.sleep(self.debounce_ms / 1000.0)
-        if self._stop_event.is_set():
+            steps = max(1, int(self.debounce_ms / 20))
+            for _ in range(steps):
+                if (
+                    self._stop_event.is_set()
+                    or self._cancel_selection_flag.is_set()
+                    or (time.time() - self._last_right_click_time < 0.8)
+                    or self._is_context_menu_active()
+                ):
+                    return
+                time.sleep(0.02)
+
+        if (
+            self._stop_event.is_set()
+            or self._cancel_selection_flag.is_set()
+            or (time.time() - self._last_right_click_time < 0.8)
+            or self._is_context_menu_active()
+        ):
             return
         if time.time() < self._close_cooldown_until:
             return
@@ -238,7 +325,27 @@ class WindowsSelectionListener(BaseSelectionListener):
             return
         if not force and self.auto_popup_only_when_visible and self.is_popup_visible and not self.is_popup_visible():
             return
+
+        # 2. 检查右键操作与系统右键菜单状态
+        if not force:
+            if (time.time() - self._last_right_click_time < 0.8) or self._is_context_menu_active():
+                return
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    if ctypes.windll.user32.GetAsyncKeyState(0x02) & 0x8000:
+                        return
+                except Exception:
+                    pass
+
         raw_text = self._capture_selected_text_via_clipboard()
+        if (
+            self._cancel_selection_flag.is_set()
+            or (time.time() - self._last_right_click_time < 0.8)
+            or self._is_context_menu_active()
+        ):
+            return
+
         sanitized = self.sanitize_text(raw_text)
         now = time.time()
 
@@ -253,9 +360,16 @@ class WindowsSelectionListener(BaseSelectionListener):
                 or sanitized != self._last_selected_text
                 or (now - self._last_trigger_time) >= self.repeat_threshold_seconds
             ):
+                if not force and (
+                    self._cancel_selection_flag.is_set()
+                    or (time.time() - self._last_right_click_time < 0.8)
+                    or self._is_context_menu_active()
+                ):
+                    return
                 self._last_selected_text = sanitized
                 self._last_trigger_time = now
                 self.callback(sanitized, (int(x), int(y)))
+
 
     def start(self) -> None:
         """启动 Windows 鼠标监听器"""

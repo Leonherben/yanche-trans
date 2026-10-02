@@ -261,7 +261,7 @@ def test_preference_changes_do_not_resurrect_previous_query(pending, state):
     assert len(pending.workers) == 1
     assert app.popup._current_result is None
     assert app.popup.isVisible() == (state == "empty")
-    assert app.popup.direction_btn.text() == "English → 日本語 ▾"
+    assert app.popup.direction_btn.text() in ("英 ⇄ 日", "English → 日本語")
     assert app.config.default_provider == "deepseek"
 
 

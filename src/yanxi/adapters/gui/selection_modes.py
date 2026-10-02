@@ -9,14 +9,14 @@ from yanxi.core.config import SelectionMode
 
 
 MODE_LABELS = {
-    SelectionMode.MANUAL: "快捷键查词",
+    SelectionMode.MANUAL: "快捷键翻译",
     SelectionMode.AUTOMATIC: "划选即翻译",
-    SelectionMode.COMPANION: "伴随阅读",
+    SelectionMode.COMPANION: "划词翻译（仅开窗）",
 }
 MODE_DESCRIPTIONS = {
-    SelectionMode.MANUAL: "选中文字后按快捷键翻译；已启用的鼠标侧键也可取词，不自动翻译。",
+    SelectionMode.MANUAL: "选中文字后按快捷键翻译，不自动翻译。",
     SelectionMode.AUTOMATIC: "选中文字并松开鼠标后自动翻译，浮窗收起时也会触发。",
-    SelectionMode.COMPANION: "仅浮窗打开时自动翻译；浮窗收起后，可用快捷键或已启用的鼠标侧键重新取词。",
+    SelectionMode.COMPANION: "仅浮窗打开时划词自动翻译；浮窗收起后不打扰，按快捷键唤出。",
 }
 
 

@@ -45,9 +45,9 @@ class SelectionConfig(BaseModel):
     debounce_ms: int = 150           # 选词消抖延迟毫秒
     min_length: int = 1              # 最小划词字符数
     max_length: int = 2000           # 最大划词字符数
-    hotkey: str = "<alt>+d"          # 主选词/翻译热键 (Alt + D)
+    hotkey: str = "<alt>+q"          # 主选词/翻译热键 (Alt + Q)
     extra_hotkeys: list[str] = Field(default_factory=list)  # 额外绑定的多快捷键
-    enable_mouse_side_button: bool = True  # 启用鼠标侧键 (X1/X2) 划词取词触发
+    enable_mouse_side_button: bool = False  # 启用鼠标侧键 (X1/X2) 划词取词触发（默认关闭，避免前进后退冲突）
     panic_hotkey: str = "<ctrl>+<alt>+<esc>"  # 紧急逃生键
 
     def get_mode(self) -> SelectionMode:
@@ -71,7 +71,7 @@ class SelectionConfig(BaseModel):
             cleaned = k.strip().lower()
             if cleaned and cleaned not in keys:
                 keys.append(cleaned)
-        return keys or ["<alt>+d"]
+        return keys or ["<alt>+q"]
 
     def set_all_hotkeys(self, hotkeys: list[str]) -> None:
         """更新所有快捷键列表，第一个作为主快捷键，其余作为额外快捷键"""
@@ -86,7 +86,7 @@ class SelectionConfig(BaseModel):
             self.hotkey = unique[0]
             self.extra_hotkeys = unique[1:]
         else:
-            self.hotkey = "<alt>+d"
+            self.hotkey = "<alt>+q"
             self.extra_hotkeys = []
 
 
@@ -94,20 +94,20 @@ class SelectionConfig(BaseModel):
 class UIConfig(BaseModel):
     """悬浮窗 UI 配置"""
     theme: str = "auto"              # auto | dark | light | glass (默认跟随系统)
-    font_size: int = 13              # 字号
+    font_size: int = 14              # 字号 (默认 14)
     min_width: int = 360             # 最小宽度
     min_height: int = 200            # 最小高度
     window_width: int = 450          # 初始/用户拉伸记忆宽度
     window_height: int = 320         # 初始/用户拉伸记忆高度
     fixed_x: Optional[int] = None    # 固定位置 X 坐标
     fixed_y: Optional[int] = None    # 固定位置 Y 坐标
-    is_pinned: bool = False          # 是否记忆固定状态
+    is_pinned: bool = True           # 是否记忆固定状态（默认固定位置）
     only_translation: bool = False   # 是否只显示译文卡片
     splitter_sizes: list[int] = Field(default_factory=lambda: [90, 180])  # 原文与译文高度分配
-    auto_hide_seconds: int = 8       # 失去交互后自动收起秒数（0表示不自动收起）
-    window_opacity: float = 0.95     # 窗口透明度 (0.4 ~ 1.0)
+    auto_hide_seconds: int = 10      # 失去交互后自动收起秒数（0表示不自动收起，默认 10）
+    window_opacity: float = 1.0      # 窗口透明度 (0.4 ~ 1.0，默认 100%)
     open_on_startup: bool = True     # 打开应用时是否自动展示悬浮窗 (默认开启)
-    auto_translate_input: bool = True  # 保留输入后自动翻译；关闭时回车或按钮提交
+    auto_translate_input: bool = False  # 保留输入后自动翻译；关闭时回车或按钮提交（默认关闭）
 
 
 class UpdateConfig(BaseModel):

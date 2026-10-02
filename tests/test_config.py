@@ -49,27 +49,32 @@ def test_config_corrupted_fallback(tmp_path: Path):
 
 def test_selection_config_defaults():
     config = AppConfig()
-    assert config.selection.hotkey == "<alt>+d"
+    assert config.selection.hotkey == "<alt>+q"
     assert config.selection.extra_hotkeys == []
-    assert config.selection.enable_mouse_side_button is True
+    assert config.selection.enable_mouse_side_button is False
     assert config.selection.auto_popup_on_selection is True
     assert config.selection.auto_popup_only_when_visible is True
     assert config.ui.open_on_startup is True
+    assert config.ui.is_pinned is True
+    assert config.ui.font_size == 14
+    assert config.ui.window_opacity == 1.0
+    assert config.ui.auto_hide_seconds == 10
+    assert config.ui.auto_translate_input is False
 
 
 def test_selection_config_multiple_hotkeys():
     config = AppConfig()
-    assert config.selection.get_all_hotkeys() == ["<alt>+d"]
+    assert config.selection.get_all_hotkeys() == ["<alt>+q"]
 
     # 设置多个快捷键，包含重复项
-    config.selection.set_all_hotkeys(["<alt>+d", "<ctrl>+<alt>+t", "<alt>+d", "<f2>"])
-    assert config.selection.hotkey == "<alt>+d"
+    config.selection.set_all_hotkeys(["<alt>+q", "<ctrl>+<alt>+t", "<alt>+q", "<f2>"])
+    assert config.selection.hotkey == "<alt>+q"
     assert config.selection.extra_hotkeys == ["<ctrl>+<alt>+t", "<f2>"]
-    assert config.selection.get_all_hotkeys() == ["<alt>+d", "<ctrl>+<alt>+t", "<f2>"]
+    assert config.selection.get_all_hotkeys() == ["<alt>+q", "<ctrl>+<alt>+t", "<f2>"]
 
     # 清空时回退为默认
     config.selection.set_all_hotkeys([])
-    assert config.selection.hotkey == "<alt>+d"
+    assert config.selection.hotkey == "<alt>+q"
     assert config.selection.extra_hotkeys == []
 
 

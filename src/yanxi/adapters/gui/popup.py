@@ -9,12 +9,13 @@ from __future__ import annotations
 from html import escape
 from typing import Optional, Callable, List
 from PySide6.QtCore import Qt, QPoint, QTimer, Signal, QEvent, QRect
-from PySide6.QtGui import QCursor, QGuiApplication, QKeyEvent, QTextCursor
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QKeyEvent, QTextCursor, QPainter, QPen
 
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -25,14 +26,29 @@ from PySide6.QtWidgets import (
     QSizeGrip,
     QSlider,
     QSplitter,
+    QStyle,
+    QStyleOptionButton,
+    QStylePainter,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
     QWidgetAction,
 )
 import pyperclip
+import sys
 from yanxi.core.config import UIConfig, SelectionConfig, SelectionMode, ProviderConfig
 from yanxi.core.provider_state import is_configured
+
+if sys.platform == "win32":
+    try:
+        from yanxi.adapters.gui.windows_effects import enable_blur_behind, disable_blur_behind
+    except Exception:
+        enable_blur_behind = None
+        disable_blur_behind = None
+else:
+    enable_blur_behind = None
+    disable_blur_behind = None
+
 from yanxi.adapters.gui.providers import provider_label, provider_menu_label, add_provider_actions
 from yanxi.adapters.gui.selection_modes import MODE_LABELS, MODE_DESCRIPTIONS, add_mode_actions
 from yanxi.adapters.gui.languages import language_label, add_language_actions
@@ -48,6 +64,7 @@ from yanxi.adapters.selection.hotkey_fallback import (
     format_for_display,
     is_valid_pynput_hotkey,
 )
+
 
 
 RESIZE_MARGIN = 10  # 边缘缩放感应带宽 (像素)
@@ -560,6 +577,12 @@ class OriginalTextEdit(QPlainTextEdit):
     def setTextInteractionFlags(self, flags) -> None:
         pass  # 兼容空实现
 
+    def mousePressEvent(self, event) -> None:
+        win = self.window()
+        if win and hasattr(win, "_activate_window_for_input"):
+            win._activate_window_for_input()
+        super().mousePressEvent(event)
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Escape:
             if self.window():
@@ -574,6 +597,7 @@ class OriginalTextEdit(QPlainTextEdit):
             event.accept()
             return
         super().keyPressEvent(event)
+
 
 
 class PopupBubble(QWidget):
@@ -671,7 +695,13 @@ class PopupBubble(QWidget):
         self.auto_hide_timer.setSingleShot(True)
         self.auto_hide_timer.timeout.connect(self._on_auto_hide)
 
+        # 模式状态：是否处于主动打字输入状态
+        self._is_active_input_mode: bool = False
+
         self._init_ui()
+
+        if sys.platform == "win32":
+            self._ensure_no_activate_style()
 
         # 恢复记忆的固定位置
         if self._is_pinned and self._fixed_pos is not None:
@@ -707,20 +737,20 @@ class PopupBubble(QWidget):
         self.container.installEventFilter(self)
 
         container_layout = QVBoxLayout(self.container)
-        container_layout.setContentsMargins(12, 10, 12, 8)
-        container_layout.setSpacing(8)
+        container_layout.setContentsMargins(10, 8, 10, 8)
+        container_layout.setSpacing(6)
 
-        # ==================== 1. 顶栏 (Header) ====================
+        # ==================== 1. 单行极简控制栏 (Single-Row Header) ====================
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(0, 0, 0, 0)
-        top_bar.setSpacing(6)
+        top_bar.setSpacing(5)
 
         self.brand_badge = QLabel("言蹊", self)
         self.brand_badge.setObjectName("brand_badge")
         self.brand_badge.hide()
 
-        # Provider 切换胶囊按钮 (清爽无冗余图标)
-        self.provider_btn = QPushButton(f"{provider_label(self._current_provider)} ▾", self)
+        # 左侧 1: Provider 切换胶囊 [DeepSeek]
+        self.provider_btn = QPushButton(provider_label(self._current_provider), self)
         self.provider_btn.setObjectName("provider_btn")
         self.provider_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.provider_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -730,6 +760,20 @@ class PopupBubble(QWidget):
         self.set_active_provider(self._current_provider)
         top_bar.addWidget(self.provider_btn)
 
+        # 左侧 2: 紧凑语言胶囊 [自动 ⇄ 中 ▾]
+        self.direction_btn = QPushButton(self)
+        self.direction_btn.setObjectName("provider_btn")
+        self.direction_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.direction_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.direction_btn.setToolTip("切换源语言或目标语言，重译当前原文")
+        self.direction_btn.setAccessibleName("翻译方向")
+        self.direction_btn.clicked.connect(self._show_language_menu)
+        self.set_translation_direction(self._source_lang, self._target_lang)
+        top_bar.addWidget(self.direction_btn)
+
+        top_bar.addStretch()
+
+        # 右侧 1: 取词模式胶囊 [伴随阅读 ▾]
         self.mode_btn = QPushButton(self)
         self.mode_btn.setObjectName("provider_btn")
         self.mode_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -737,10 +781,9 @@ class PopupBubble(QWidget):
         self.mode_btn.clicked.connect(self._show_selection_mode_menu)
         self._selection_listener_enabled = True
         self.refresh_selection_mode()
+        top_bar.addWidget(self.mode_btn)
 
-        top_bar.addStretch()
-
-        # 钉住/固定按钮
+        # 右侧 2: 钉住/固定按钮 [📌]
         self.pin_btn = QPushButton("📌", self)
         self.pin_btn.setObjectName("pin_btn")
         self.pin_btn.setFixedSize(26, 26)
@@ -750,17 +793,18 @@ class PopupBubble(QWidget):
         self.pin_btn.clicked.connect(self._toggle_pin)
         top_bar.addWidget(self.pin_btn)
 
-        # 更多操作菜单按钮
-        self.more_btn = QPushButton("⋯", self)
+
+        # 右侧 3: 更多/设置菜单按钮 [⚙]
+        self.more_btn = QPushButton("⚙", self)
         self.more_btn.setObjectName("action_btn")
         self.more_btn.setFixedSize(26, 26)
-        self.more_btn.setToolTip("设置")
+        self.more_btn.setToolTip("设置与服务管理")
         self.more_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.more_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.more_btn.clicked.connect(self._show_more_menu)
         top_bar.addWidget(self.more_btn)
 
-        # 关闭按钮
+        # 右侧 4: 关闭按钮 [✕]
         self.close_btn = QPushButton("✕", self)
         self.close_btn.setObjectName("close_btn")
         self.close_btn.setFixedSize(26, 26)
@@ -772,21 +816,6 @@ class PopupBubble(QWidget):
         top_bar.addWidget(self.close_btn)
 
         container_layout.addLayout(top_bar)
-
-        direction_bar = QHBoxLayout()
-        direction_bar.setSpacing(6)
-        self.direction_btn = QPushButton(self)
-        self.direction_btn.setObjectName("provider_btn")
-        self.direction_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.direction_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.direction_btn.setToolTip("切换源语言或目标语言，重译当前原文")
-        self.direction_btn.setAccessibleName("翻译方向")
-        self.direction_btn.clicked.connect(self._show_language_menu)
-        self.set_translation_direction(self._source_lang, self._target_lang)
-        direction_bar.addWidget(self.direction_btn)
-        direction_bar.addStretch()
-        direction_bar.addWidget(self.mode_btn)
-        container_layout.addLayout(direction_bar)
 
         # ==================== 2. 原文卡片 (Original Card) ====================
         self.orig_card = QFrame(self)
@@ -800,6 +829,7 @@ class PopupBubble(QWidget):
         self.original_label = self.original_edit  # 保持属性兼容
         self.original_edit.return_pressed.connect(self._on_manual_translate_requested)
         self.original_edit.textChanged.connect(self._on_original_text_changed)
+        self.original_edit.installEventFilter(self)
         orig_layout.addWidget(self.original_edit, stretch=1)
 
         # 原文卡片底栏：清空、即时翻译、复制原文
@@ -847,11 +877,17 @@ class PopupBubble(QWidget):
         trans_layout.setContentsMargins(10, 8, 10, 8)
         trans_layout.setSpacing(6)
 
-        # 译文 Markdown 富文本展示（自适应伸展）
+        # 译文 Markdown 富文本展示（自适应伸展，支持选中、Ctrl+C 与右键菜单）
         self.text_browser = QTextBrowser(self)
         self.text_browser.setObjectName("trans_browser")
         self.text_browser.setOpenExternalLinks(False)
-        self.text_browser.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.text_browser.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.text_browser.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        self.text_browser.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.text_browser.customContextMenuRequested.connect(self._show_text_browser_context_menu)
         trans_layout.addWidget(self.text_browser, stretch=1)
 
         # 译文卡片底栏：状态提示 + 复制译文按钮
@@ -864,7 +900,7 @@ class PopupBubble(QWidget):
         trans_bottom.addWidget(self.latency_label)
 
         self.status_msg = QLabel("", self)
-        self.status_msg.setStyleSheet("color: #3fb950; font-size: 11px; font-weight: 500;")
+        self.status_msg.setStyleSheet("font-size: 11px; font-weight: 500;")
         trans_bottom.addWidget(self.status_msg)
 
         trans_bottom.addStretch()
@@ -932,13 +968,85 @@ class PopupBubble(QWidget):
         container_layout.addLayout(bottom_bar)
 
 
-        # 整体布局外边距
+        # 整体布局外边距（紧密贴合主容器，彻底杜绝黑色方框底色与边距伪影）
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(4, 4, 4, 4)
+        root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.addWidget(self.container)
+
+        # 阴影特效属性（适配不同模式透明度）
+        self.shadow_effect = QGraphicsDropShadowEffect(self.container)
+        self.shadow_effect.setBlurRadius(16)
+        self.shadow_effect.setOffset(0, 4)
+        self.shadow_effect.setColor(QColor(0, 0, 0, 80))
 
         # 应用主题与透明度
         self.apply_theme(self._theme, self._opacity)
+
+    def _ensure_no_activate_style(self) -> None:
+        """Windows 下确保应用 WS_EX_NOACTIVATE 扩展样式，绝不与外部前台焦点竞争"""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                GWL_EXSTYLE = -20
+                WS_EX_NOACTIVATE = 0x08000000
+                hwnd = int(self.winId())
+                if hwnd:
+                    ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                    if not (ex_style & WS_EX_NOACTIVATE):
+                        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_NOACTIVATE)
+            except Exception:
+                pass
+
+    def _activate_window_for_input(self) -> None:
+        """当用户点击输入框或主动要求键盘打字时，临时启用激活状态"""
+        self._is_active_input_mode = True
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                GWL_EXSTYLE = -20
+                WS_EX_NOACTIVATE = 0x08000000
+                hwnd = int(self.winId())
+                if hwnd:
+                    ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & ~WS_EX_NOACTIVATE)
+                    ctypes.windll.user32.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+        self.activateWindow()
+        self.original_edit.setFocus()
+
+    def _deactivate_input_mode(self) -> None:
+        """离开主动输入时恢复非激活悬浮模式"""
+        self._is_active_input_mode = False
+        self._ensure_no_activate_style()
+
+    def nativeEvent(self, eventType, message):
+        """Windows 消息泵拦截：处理 WM_MOUSEACTIVATE 消息，禁止点击时自动激活窗口打断前台应用"""
+        if sys.platform == "win32" and eventType == b"windows_generic_MSG":
+            try:
+                import ctypes
+                # WM_MOUSEACTIVATE = 0x0021, MA_NOACTIVATE = 3
+                msg_addr = int(message)
+                offset = 8 if ctypes.sizeof(ctypes.c_void_p) == 8 else 4
+                msg_id = ctypes.c_uint.from_address(msg_addr + offset).value
+                if msg_id == 0x0021:
+                    if not getattr(self, "_is_active_input_mode", False):
+                        return True, 3
+            except Exception:
+                pass
+        return super().nativeEvent(eventType, message)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        effective = get_effective_theme(self._theme)
+        if enable_blur_behind and effective == "glass":
+            try:
+                hwnd = int(self.winId())
+                enable_blur_behind(hwnd, dark=True)
+            except Exception:
+                pass
+        if not getattr(self, "_is_active_input_mode", False):
+            self._ensure_no_activate_style()
 
     def apply_theme(self, theme_name: Optional[str] = None, opacity: Optional[float] = None) -> None:
         """动态应用主题与透明度"""
@@ -954,6 +1062,21 @@ class PopupBubble(QWidget):
         self.setStyleSheet(qss)
         self.setWindowOpacity(self._opacity)
 
+        if hasattr(self, "shadow_effect") and self.shadow_effect:
+            shadow_alpha = 40 if effective == "light" else 80
+            self.shadow_effect.setColor(QColor(0, 0, 0, shadow_alpha))
+
+        # Windows 原生亚克力与毛玻璃增强
+        if enable_blur_behind and self.isVisible():
+            try:
+                hwnd = int(self.winId())
+                if effective == "glass":
+                    enable_blur_behind(hwnd, dark=True)
+                elif disable_blur_behind:
+                    disable_blur_behind(hwnd)
+            except Exception:
+                pass
+
         self._update_pin_ui()
         self._save_current_config()
 
@@ -968,28 +1091,33 @@ class PopupBubble(QWidget):
         if self._is_pinned:
             self.pin_btn.setText("📌")
             self.pin_btn.setToolTip("取消固定")
-            self.pin_btn.setStyleSheet("""
-                QPushButton#pin_btn {
-                    background-color: #1f6feb;
-                    color: #ffffff;
-                    border: 1px solid #388bfd;
-                    border-radius: 4px;
+            pin_bg = "#e4e4e7" if effective == "light" else "#27272a"
+            pin_color = "#18181b" if effective == "light" else "#f4f4f5"
+            pin_border = "#d4d4d8" if effective == "light" else "#3f3f46"
+            self.pin_btn.setStyleSheet(f"""
+                QPushButton#pin_btn {{
+                    background-color: {pin_bg};
+                    color: {pin_color};
+                    border: 1px solid {pin_border};
+                    border-radius: 6px;
                     font-size: 12px;
-                }
+                }}
             """)
         else:
             self.pin_btn.setText("📌")
             self.pin_btn.setToolTip("固定位置")
-            hover_bg = "#eaeef2" if effective == "light" else "rgba(255, 255, 255, 0.12)"
+            hover_bg = "#f4f4f5" if effective == "light" else "#27272a"
+            hover_border = "#e4e4e7" if effective == "light" else "#3f3f46"
             self.pin_btn.setStyleSheet(f"""
                 QPushButton#pin_btn {{
                     background-color: transparent;
-                    border: none;
+                    border: 1px solid transparent;
                     font-size: 12px;
-                    border-radius: 4px;
+                    border-radius: 6px;
                 }}
                 QPushButton#pin_btn:hover {{
                     background-color: {hover_bg};
+                    border-color: {hover_border};
                 }}
             """)
 
@@ -1038,10 +1166,10 @@ class PopupBubble(QWidget):
         mode = self.selection_config.get_mode()
         label = MODE_LABELS[mode]
         if self._selection_listener_enabled:
-            self.mode_btn.setText(f"{label} ▾")
+            self.mode_btn.setText(label)
             self.mode_btn.setToolTip(MODE_DESCRIPTIONS[mode])
         else:
-            self.mode_btn.setText("取词已暂停 ▾")
+            self.mode_btn.setText("取词已暂停")
             self.mode_btn.setToolTip(f"当前模式：{label}。请在托盘中恢复取词。")
         if hasattr(self, "auto_hide_timer"):
             if self.isVisible():
@@ -1054,6 +1182,7 @@ class PopupBubble(QWidget):
         menu.setStyleSheet(get_theme_menu_style(get_effective_theme(self._theme)))
         add_mode_actions(menu, self.selection_config.get_mode(), self._set_selection_mode)
         menu.exec(self.mode_btn.mapToGlobal(QPoint(0, self.mode_btn.height() + 2)))
+        menu.deleteLater()
 
     def _set_selection_mode(self, mode: SelectionMode) -> None:
         self.selection_config.set_mode(mode)
@@ -1128,7 +1257,12 @@ class PopupBubble(QWidget):
 
     def _flash_status(self, msg: str, duration_ms: int = 1800) -> None:
         self.status_msg.setText(msg)
-        QTimer.singleShot(duration_ms, lambda: self.status_msg.setText(""))
+        def _clear() -> None:
+            try:
+                self.status_msg.setText("")
+            except Exception:
+                pass
+        QTimer.singleShot(duration_ms, _clear)
 
     def _flash_orig_meta(self, msg: str, duration_ms: int = 1800) -> None:
         self.orig_meta_label.setText(msg)
@@ -1163,6 +1297,14 @@ class PopupBubble(QWidget):
         except Exception:
             pass
 
+    def _flash_copy_success(self, btn: QPushButton, text: str = "已复制") -> None:
+        """为复制按钮提供温润的即时微动效反馈"""
+        if not btn:
+            return
+        orig_text = btn.text()
+        btn.setText(text)
+        QTimer.singleShot(1200, lambda: btn.setText(orig_text))
+
     def _copy_original(self) -> None:
         text = self.original_edit.toPlainText().strip() or self._last_requested_text or (
             self._current_result.original_text if self._current_result else ""
@@ -1170,11 +1312,13 @@ class PopupBubble(QWidget):
         if text:
             self._safe_copy_to_clipboard(text)
             self._flash_status("已复制原文")
+            self._flash_copy_success(self.copy_orig_btn, "已复制")
 
     def _copy_result(self) -> None:
         if self._current_result and self._current_result.is_success():
             self._safe_copy_to_clipboard(self._current_result.translated_text)
             self._flash_status("已复制译文")
+            self._flash_copy_success(self.copy_btn, "已复制")
 
     def _open_current_provider_settings(self) -> None:
         if self.on_configure_provider:
@@ -1270,6 +1414,7 @@ class PopupBubble(QWidget):
                 cy = geo.y() + (geo.height() - self.height()) // 2
                 self.move(cx, cy)
 
+        self._activate_window_for_input()
         self.show()
         self.raise_()
         self.activateWindow()
@@ -1341,25 +1486,25 @@ class PopupBubble(QWidget):
                 border-radius: 2px;
             }
             QSlider::sub-page:horizontal {
-                background: #1f6feb;
+                background: #52525b;
                 border-radius: 2px;
             }
             QSlider::handle:horizontal {
-                background: #ffffff;
-                border: 1px solid #1f6feb;
+                background: #f4f4f5;
+                border: 1px solid #71717a;
                 width: 12px;
                 margin-top: -4px;
                 margin-bottom: -4px;
                 border-radius: 6px;
             }
             QSlider::handle:horizontal:hover {
-                background: #58a6ff;
+                background: #ffffff;
             }
         """)
 
         op_val_label = QLabel(f"{curr_pct}%", op_widget)
         op_val_label.setFixedWidth(34)
-        op_val_label.setStyleSheet("font-size: 11px; color: #58a6ff; font-weight: bold;")
+        op_val_label.setStyleSheet("font-size: 11px; color: #a1a1aa; font-weight: bold;")
 
         def _on_slider_change(val: int):
             op_val_label.setText(f"{val}%")
@@ -1377,7 +1522,7 @@ class PopupBubble(QWidget):
 
         # 8. 设置
         if self.on_open_settings:
-            act_settings = menu.addAction("⚙ 设置...")
+            act_settings = menu.addAction("设置")
             act_settings.triggered.connect(self.on_open_settings)
 
         # 9. 恢复默认尺寸
@@ -1391,6 +1536,7 @@ class PopupBubble(QWidget):
 
         pos = self.more_btn.mapToGlobal(QPoint(0, self.more_btn.height() + 2))
         menu.exec(pos)
+        menu.deleteLater()
 
     def _handle_theme_change(self, theme_code: str) -> None:
         self.apply_theme(theme_name=theme_code)
@@ -1412,7 +1558,7 @@ class PopupBubble(QWidget):
 
         if self.on_open_settings:
             menu.addSeparator()
-            act_manage = menu.addAction("⚙ 管理服务与 API Key...")
+            act_manage = menu.addAction("管理服务与 API Key")
             act_manage.triggered.connect(self.on_open_settings)
 
         return menu
@@ -1441,11 +1587,28 @@ class PopupBubble(QWidget):
 
     def set_translation_direction(self, source: str, target: str) -> None:
         self._source_lang, self._target_lang = source, target
-        self.direction_btn.setText(f"{language_label(source)} → {language_label(target)} ▾")
+        compact_map = {
+            "auto": "自动",
+            "zh-CN": "中",
+            "zh-TW": "繁中",
+            "en": "英",
+            "ja": "日",
+            "ko": "韩",
+            "fr": "法",
+            "de": "德",
+            "es": "西",
+            "ru": "俄",
+            "it": "意",
+        }
+        s_lbl = compact_map.get(source, language_label(source))
+        t_lbl = compact_map.get(target, language_label(target))
+        self.direction_btn.setText(f"{s_lbl} ⇄ {t_lbl}")
+        self.direction_btn.setToolTip(f"翻译方向：{language_label(source)} → {language_label(target)}（点击切换）")
 
     def _create_language_menu(self) -> QMenu:
+        effective = get_effective_theme(self._theme)
         menu = QMenu(self)
-        menu.setStyleSheet(get_theme_menu_style(get_effective_theme(self._theme)))
+        menu.setStyleSheet(get_theme_menu_style(effective))
         source_menu = menu.addMenu("源语言")
         target_menu = menu.addMenu("目标语言")
         add_language_actions(source_menu, self._source_lang, self._handle_source_lang_change, source=True)
@@ -1475,7 +1638,7 @@ class PopupBubble(QWidget):
         """更新当前生效的翻译引擎显示"""
         self._current_provider = provider_name
         if hasattr(self, "provider_btn"):
-            self.provider_btn.setText(f"{provider_label(provider_name)} ▾")
+            self.provider_btn.setText(provider_label(provider_name))
             self.provider_btn.setToolTip(provider_menu_label(provider_name, self.provider_configs.get(provider_name)) + "；点击切换引擎")
 
     def display_loading(self, text: str, cursor_x: int, cursor_y: int) -> None:
@@ -1521,7 +1684,16 @@ class PopupBubble(QWidget):
         self.clear_orig_btn.setVisible(has_text)
         self.translate_btn.setVisible(has_text)
 
-        self.show()
+        if not self.isVisible():
+            self._deactivate_input_mode()
+            self.show()
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    # SW_SHOWNOACTIVATE = 4, 保证绝不窃取外部前台焦点或打断右键菜单
+                    ctypes.windll.user32.ShowWindow(int(self.winId()), 4)
+                except Exception:
+                    pass
 
     def display_result(self, result: TranslationResult) -> None:
         """展示完成的翻译结果"""
@@ -1565,7 +1737,16 @@ class PopupBubble(QWidget):
         else:
             self._restart_auto_hide_timer()
 
-        self.show()
+        if not self.isVisible():
+            self._deactivate_input_mode()
+            self.show()
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    # SW_SHOWNOACTIVATE = 4, 保证绝不窃取外部前台焦点或打断右键菜单
+                    ctypes.windll.user32.ShowWindow(int(self.winId()), 4)
+                except Exception:
+                    pass
 
     def dismiss_if_outside(self, cursor_x: int = 0, cursor_y: int = 0) -> None:
         """如果浮窗正处于显示状态且未钉住，当点击落在浮窗几何区域外部时平滑收起"""
@@ -1582,6 +1763,7 @@ class PopupBubble(QWidget):
     def hideEvent(self, event) -> None:
         self._input_debounce_timer.stop()
         self.auto_hide_timer.stop()
+        self._deactivate_input_mode()
         self.closed.emit()
         super().hideEvent(event)
 
@@ -1691,7 +1873,11 @@ class PopupBubble(QWidget):
         self._save_timer.start(500)
 
     def eventFilter(self, watched, event) -> bool:
-        """拦截主卡片外壳事件，支持贴边/贴角的顺滑拉伸缩放"""
+        """拦截主卡片外壳事件，支持贴边/贴角的顺滑拉伸缩放与文本编辑聚焦激活"""
+        if hasattr(self, "original_edit") and watched == self.original_edit:
+            if event.type() == QEvent.Type.MouseButtonPress:
+                self._activate_window_for_input()
+
         if watched == self.container:
             if event.type() == QEvent.Type.MouseMove:
                 pos_in_bubble = self.container.mapTo(self, event.pos())
@@ -1806,9 +1992,45 @@ class PopupBubble(QWidget):
         ):
             self.auto_hide_timer.start(self.config.auto_hide_seconds * 1000)
 
+    def _show_text_browser_context_menu(self, pos: QPoint) -> None:
+        """为译文展示区提供高颜值定制右键菜单"""
+        menu = QMenu(self)
+        effective = get_effective_theme(self._theme)
+        menu.setStyleSheet(get_theme_menu_style(effective))
+
+        cursor = self.text_browser.textCursor()
+        if cursor.hasSelection():
+            act_copy_sel = menu.addAction("复制选中内容 (Ctrl+C)")
+            act_copy_sel.triggered.connect(self.text_browser.copy)
+
+        act_copy_all = menu.addAction("复制全部译文")
+        act_copy_all.triggered.connect(self._copy_result)
+
+        menu.addSeparator()
+        act_select_all = menu.addAction("全选 (Ctrl+A)")
+        act_select_all.triggered.connect(self.text_browser.selectAll)
+
+        menu.exec(self.text_browser.mapToGlobal(pos))
+        menu.deleteLater()
+
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
             self.hide()
             event.accept()
-        else:
-            super().keyPressEvent(event)
+            return
+
+        # 悬浮窗内任意位置按 Ctrl+C 智能复制
+        if (
+            event.key() == Qt.Key.Key_C
+            and (event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        ):
+            if self.original_edit.hasFocus() and self.original_edit.textCursor().hasSelection():
+                self.original_edit.copy()
+            elif self.text_browser.textCursor().hasSelection():
+                self.text_browser.copy()
+            else:
+                self._copy_result()
+            event.accept()
+            return
+
+        super().keyPressEvent(event)

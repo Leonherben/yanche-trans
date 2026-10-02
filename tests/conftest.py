@@ -44,6 +44,8 @@ def controller(qapp, monkeypatch):
     config = AppConfig()
     config.ui.open_on_startup = False
     config.update.auto_check_update = False
+    config.ui.is_pinned = False
+    config.ui.auto_translate_input = True
     monkeypatch.setattr(main_module.AppConfig, "load", classmethod(lambda cls: config))
     for name in ("WindowsSelectionListener", "LinuxX11SelectionListener", "HotkeySelectionListener"):
         monkeypatch.setattr(main_module, name, FakeListener)

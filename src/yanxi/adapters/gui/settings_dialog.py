@@ -732,19 +732,19 @@ class SettingsDialog(QDialog):
                 color: #24292f;
             }
             QLineEdit, QComboBox, QSpinBox {
-                border: 1px solid #d0d7de;
-                border-radius: 4px;
+                border: 1px solid #d4d4d8;
+                border-radius: 6px;
                 padding: 4px 8px;
                 background-color: #ffffff;
                 color: #24292f;
                 font-size: 12px;
             }
             QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
-                border: 1px solid #0969da;
+                border: 1px solid #71717a;
             }
             QPushButton {
-                border: 1px solid #d0d7de;
-                border-radius: 4px;
+                border: 1px solid #d4d4d8;
+                border-radius: 6px;
                 padding: 5px 12px;
                 background-color: #f6f8fa;
                 color: #24292f;
@@ -752,15 +752,16 @@ class SettingsDialog(QDialog):
             }
             QPushButton:hover {
                 background-color: #f3f4f6;
-                border-color: #0969da;
+                border-color: #71717a;
             }
             QPushButton:default {
-                background-color: #1f6feb;
+                background-color: #27272a;
                 color: #ffffff;
-                border-color: #1f6feb;
+                border-color: #27272a;
                 font-weight: bold;
             }
             QPushButton:default:hover {
-                background-color: #388bfd;
+                background-color: #3f3f46;
+                border-color: #3f3f46;
             }
         """)

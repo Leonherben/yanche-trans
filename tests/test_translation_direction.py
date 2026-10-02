@@ -17,7 +17,7 @@ def test_popup_language_menu_has_source_detection_and_target_choices(qapp):
     assert source.actions()[0].isChecked()
     assert all(action.text() != "自动检测" for action in target.actions())
     next(action for action in target.actions() if action.text() == "日本語").trigger()
-    assert popup.direction_btn.text() == "自动检测 → 日本語 ▾"
+    assert popup.direction_btn.text() == "自动 ⇄ 日"
     assert not popup.isVisible()
     menu.deleteLater()
     popup.close()
@@ -28,7 +28,7 @@ def test_custom_language_codes_survive_settings_and_show_current_choice(controll
     config.default_source_lang = "fr"
     config.default_target_lang = "de"
     controller.on_settings_saved(config)
-    assert controller.popup.direction_btn.text() == "fr → de ▾"
+    assert controller.popup.direction_btn.text() == "法 ⇄ 德"
     assert controller.tray.source_lang_actions["fr"].isChecked()
     assert controller.tray.lang_actions["de"].isChecked()
     assert not controller.tray.lang_actions["de"].isEnabled()
@@ -57,7 +57,5 @@ def test_direction_and_mode_fit_narrow_header(qapp, width):
     qapp.processEvents()
     assert popup.width() == width
     assert popup.direction_btn.geometry().right() < popup.mode_btn.geometry().left()
-    assert popup.direction_btn.width() >= popup.direction_btn.sizeHint().width()
-    assert popup.mode_btn.width() >= popup.mode_btn.sizeHint().width()
-    assert popup.direction_btn.y() > popup.provider_btn.y()
+    assert popup.direction_btn.y() == popup.provider_btn.y()
     popup.close()

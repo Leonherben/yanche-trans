@@ -25,8 +25,8 @@ def test_settings_dialog_init(qapp, tmp_path):
     assert dialog.default_check.isChecked()
 
     # 验证快捷键 Tab 预填
-    assert dialog.main_hotkey_edit.text() == "<alt>+d"
-    assert dialog.mouse_side_check.isChecked()
+    assert dialog.main_hotkey_edit.text() == "<alt>+q"
+    assert not dialog.mouse_side_check.isChecked()
     assert dialog.selection_mode_combo.currentData() == SelectionMode.COMPANION
     assert "仅浮窗打开时" in dialog.selection_mode_hint.text()
     assert dialog.windowTitle() == "言蹊翻译 - 设置"
