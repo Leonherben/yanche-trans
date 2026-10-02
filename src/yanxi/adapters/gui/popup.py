@@ -981,6 +981,15 @@ class PopupBubble(QWidget):
         status_text = "划选自动翻译已开启" if checked else "划选自动翻译已关闭"
         self._flash_status(status_text)
 
+    def _toggle_auto_popup_only_when_visible(self, checked: bool) -> None:
+        """切换伴随阅读模式（仅浮窗打开时划词翻译）"""
+        self.selection_config.auto_popup_only_when_visible = checked
+        self._save_current_config()
+        if self.on_update_selection_config:
+            self.on_update_selection_config()
+        status_text = "伴随阅读模式已开启 (仅浮窗打开时划词)" if checked else "全时划词模式已开启"
+        self._flash_status(status_text)
+
     def _toggle_mouse_side_button(self, checked: bool) -> None:
         """切换鼠标侧键取词触发"""
         self.selection_config.enable_mouse_side_button = checked
@@ -1204,6 +1213,12 @@ class PopupBubble(QWidget):
         act_auto_pop.setChecked(self.selection_config.auto_popup_on_selection)
         act_auto_pop.triggered.connect(self._toggle_auto_popup)
 
+        act_visible_only = menu.addAction("  ↳ 伴随阅读 (仅浮窗打开时划词)")
+        act_visible_only.setCheckable(True)
+        act_visible_only.setChecked(self.selection_config.auto_popup_only_when_visible)
+        act_visible_only.setEnabled(self.selection_config.auto_popup_on_selection)
+        act_visible_only.triggered.connect(self._toggle_auto_popup_only_when_visible)
+
         # 4. 鼠标侧键触发开关
         act_side = menu.addAction("鼠标侧键触发")
         act_side.setCheckable(True)
@@ -1366,8 +1381,8 @@ class PopupBubble(QWidget):
         elif self._is_pinned and getattr(self.config, "fixed_x", None) is not None:
             self._fixed_pos = QPoint(self.config.fixed_x, self.config.fixed_y)
             self.move(self._fixed_pos)
-        elif self.isVisible() and (cursor_x, cursor_y) == (self.x(), self.y()):
-            # 手动编辑输入或就地重译时保持当前位置不变
+        elif self.isVisible():
+            # 伴随阅读模式：若浮窗已在屏幕上，划选新词时保持当前位置就地刷新，避免频繁跳跃遮挡正文
             pass
         else:
             self.adjust_position(cursor_x, cursor_y)
@@ -1412,8 +1427,8 @@ class PopupBubble(QWidget):
         else:
             self.text_browser.setMarkdown(result.translated_text)
 
-        if self._is_pinned:
-            if self._fixed_pos is not None:
+        if self._is_pinned or getattr(self.selection_config, "auto_popup_only_when_visible", True):
+            if self._is_pinned and self._fixed_pos is not None:
                 self.move(self._fixed_pos)
             self.auto_hide_timer.stop()
         elif self.config.auto_hide_seconds > 0:
@@ -1424,6 +1439,9 @@ class PopupBubble(QWidget):
     def dismiss_if_outside(self, cursor_x: int = 0, cursor_y: int = 0) -> None:
         """如果浮窗正处于显示状态且未钉住，当点击落在浮窗几何区域外部时平滑收起"""
         if not self.isVisible() or self._is_pinned:
+            return
+        # 伴随阅读模式下，用户需要在文档/浏览器中频繁划选，点击外部绝不自动收起，由 Esc 或 ✕ 主动关闭
+        if getattr(self.selection_config, "auto_popup_only_when_visible", True):
             return
 
         mouse_pos = QCursor.pos()

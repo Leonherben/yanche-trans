@@ -297,5 +297,77 @@ def test_windows_selection_listener(mocker):
     assert empty_clicks[0] == (300, 300)
 
 
+def test_companion_reading_mode_behavior(mocker):
+    import time
+    from pynput import mouse
+    from yanxi.adapters.selection.linux_x11 import LinuxX11SelectionListener
+    from yanxi.adapters.selection.windows import WindowsSelectionListener
+
+    # 1. 验证 Linux 监听器伴随阅读模式
+    linux_callbacks = []
+    is_visible = False
+    linux_listener = LinuxX11SelectionListener(
+        callback=lambda text, pos: linux_callbacks.append((text, pos)),
+        auto_popup=True,
+        auto_popup_only_when_visible=True,
+        is_popup_visible=lambda: is_visible,
+        debounce_ms=0,
+    )
+    linux_listener._is_running = True
+    mocker.patch.object(linux_listener, "_get_primary_selection", return_value="companion text linux")
+
+    # 浮窗隐藏时：划选操作不触发弹窗翻译
+    is_visible = False
+    linux_listener._process_selection(100, 100, force=False)
+    assert len(linux_callbacks) == 0
+
+    # 快捷键 / 侧键强行触发 (force=True)：不受浮窗隐藏限制
+    linux_listener._process_selection(100, 100, force=True)
+    assert len(linux_callbacks) == 1
+    assert linux_callbacks[0][0] == "companion text linux"
+
+    # 浮窗展开时：划选新文本立即触发就地翻译
+    mocker.patch.object(linux_listener, "_get_primary_selection", return_value="companion text linux 2")
+    is_visible = True
+    linux_listener._process_selection(150, 150, force=False)
+    assert len(linux_callbacks) == 2
+    assert linux_callbacks[1][0] == "companion text linux 2"
+
+    # 2. 验证 Windows 监听器伴随阅读模式
+    win_callbacks = []
+    is_win_visible = False
+    win_listener = WindowsSelectionListener(
+        callback=lambda text, pos: win_callbacks.append((text, pos)),
+        auto_popup=True,
+        auto_popup_only_when_visible=True,
+        is_popup_visible=lambda: is_win_visible,
+        debounce_ms=0,
+    )
+    win_listener._is_running = True
+    mocker.patch.object(win_listener, "_capture_selected_text_via_clipboard", return_value="companion text win")
+
+    # 浮窗隐藏时：鼠标划选不触发翻译
+    is_win_visible = False
+    win_listener._on_click(100, 100, mouse.Button.left, True)
+    win_listener._on_click(200, 100, mouse.Button.left, False)
+    time.sleep(0.05)
+    assert len(win_callbacks) == 0
+
+    # 浮窗隐藏时：快捷键或侧键 force=True 依然可以触发
+    win_listener._process_selection(100, 100, force=True)
+    assert len(win_callbacks) == 1
+    assert win_callbacks[0][0] == "companion text win"
+
+    # 浮窗展开时：鼠标划选新文本立即触发翻译
+    mocker.patch.object(win_listener, "_capture_selected_text_via_clipboard", return_value="companion text win 2")
+    is_win_visible = True
+    win_listener._on_click(100, 100, mouse.Button.left, True)
+    win_listener._on_click(250, 100, mouse.Button.left, False)
+    time.sleep(0.05)
+    assert len(win_callbacks) == 2
+    assert win_callbacks[1][0] == "companion text win 2"
+
+
+
 
 

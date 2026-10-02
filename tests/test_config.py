@@ -52,7 +52,9 @@ def test_selection_config_defaults():
     assert config.selection.hotkey == "<alt>+d"
     assert config.selection.extra_hotkeys == []
     assert config.selection.enable_mouse_side_button is True
-    assert config.selection.auto_popup_on_selection is False
+    assert config.selection.auto_popup_on_selection is True
+    assert config.selection.auto_popup_only_when_visible is True
+    assert config.ui.open_on_startup is True
 
 
 def test_selection_config_multiple_hotkeys():

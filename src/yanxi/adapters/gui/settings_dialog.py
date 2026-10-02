@@ -333,6 +333,16 @@ class SettingsDialog(QDialog):
         self.auto_popup_check.setChecked(self.working_config.selection.auto_popup_on_selection)
         b_layout.addWidget(self.auto_popup_check)
 
+        self.auto_popup_visible_only_check = QCheckBox(
+            "仅当悬浮窗打开时自动划词 (伴随阅读模式，关闭浮窗时完全静默不打扰)", behavior_group
+        )
+        self.auto_popup_visible_only_check.setChecked(
+            self.working_config.selection.auto_popup_only_when_visible
+        )
+        self.auto_popup_visible_only_check.setEnabled(self.auto_popup_check.isChecked())
+        self.auto_popup_check.toggled.connect(self.auto_popup_visible_only_check.setEnabled)
+        b_layout.addWidget(self.auto_popup_visible_only_check)
+
         layout.addWidget(behavior_group)
 
         # 热键配置
@@ -609,6 +619,7 @@ class SettingsDialog(QDialog):
         sel = self.working_config.selection
         sel.enable_mouse_side_button = self.mouse_side_check.isChecked()
         sel.auto_popup_on_selection = self.auto_popup_check.isChecked()
+        sel.auto_popup_only_when_visible = self.auto_popup_visible_only_check.isChecked()
         sel.hotkey = self.main_hotkey_edit.text().strip() or "<alt>+d"
         extra = []
         for i in range(self.extra_hotkeys_list.count()):

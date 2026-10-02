@@ -31,8 +31,9 @@ class ProviderConfig(BaseModel):
 class SelectionConfig(BaseModel):
     """划词触发策略配置"""
     enable_x11_primary: bool = True  # Linux 下是否加载 X11 选区服务
-    auto_popup_on_selection: bool = False  # 模式 B：划选松开自动翻译（默认关闭，保持不打扰）
-    debounce_ms: int = 200           # 选词消抖延迟毫秒
+    auto_popup_on_selection: bool = True  # 划选松开自动翻译
+    auto_popup_only_when_visible: bool = True  # 伴随阅读模式：仅在悬浮窗已打开时才自动划词翻译
+    debounce_ms: int = 150           # 选词消抖延迟毫秒
     min_length: int = 1              # 最小划词字符数
     max_length: int = 2000           # 最大划词字符数
     hotkey: str = "<alt>+d"          # 主选词/翻译热键 (Alt + D)

@@ -24,12 +24,16 @@ class BaseSelectionListener(ABC):
         max_length: int = 3000,
         on_empty_click: Optional[EmptyClickCallback] = None,
         is_inside_popup: Optional[Callable[[Tuple[int, int]], bool]] = None,
+        is_popup_visible: Optional[Callable[[], bool]] = None,
+        auto_popup_only_when_visible: bool = True,
     ) -> None:
         self.callback = callback
         self.min_length = min_length
         self.max_length = max_length
         self.on_empty_click = on_empty_click
         self.is_inside_popup = is_inside_popup
+        self.is_popup_visible = is_popup_visible
+        self.auto_popup_only_when_visible = auto_popup_only_when_visible
         self._is_running = False
         self._close_cooldown_until: float = 0.0
 

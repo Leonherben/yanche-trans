@@ -111,18 +111,22 @@ def test_popup_display_error(qapp):
 
 def test_popup_dismiss_if_outside(qapp):
     from PySide6.QtGui import QCursor
+    from yanxi.core.config import SelectionConfig
     config = UIConfig()
-    popup = PopupBubble(config)
+
+    # 1. 经典非伴随模式 (auto_popup_only_when_visible=False)
+    classic_sel = SelectionConfig(auto_popup_only_when_visible=False)
+    popup = PopupBubble(config, selection_config=classic_sel)
     popup.resize(320, 150)
     popup.move(100, 100)
     popup.show()
 
-    # 1. 鼠标位于窗口外部 (500, 500)，未钉住状态下应自动收起
+    # 鼠标位于窗口外部 (500, 500)，未钉住状态下应自动收起
     QCursor.setPos(500, 500)
     popup.dismiss_if_outside()
     assert not popup.isVisible()
 
-    # 2. 重新显示并钉住 (pin)
+    # 重新显示并钉住 (pin)
     popup.show()
     popup._is_pinned = True
     QCursor.setPos(500, 500)
@@ -130,13 +134,25 @@ def test_popup_dismiss_if_outside(qapp):
     # 钉住状态下即便点击外部也不收起
     assert popup.isVisible()
 
-    # 3. 鼠标位于窗口内部 (150, 150)，未钉住状态下也不收起
+    # 鼠标位于窗口内部 (150, 150)，未钉住状态下也不收起
     popup._is_pinned = False
     QCursor.setPos(150, 150)
     popup.dismiss_if_outside()
     assert popup.isVisible()
-
     popup.close()
+
+    # 2. 伴随阅读模式 (auto_popup_only_when_visible=True)
+    companion_sel = SelectionConfig(auto_popup_only_when_visible=True)
+    companion_popup = PopupBubble(config, selection_config=companion_sel)
+    companion_popup.resize(320, 150)
+    companion_popup.move(100, 100)
+    companion_popup.show()
+
+    # 伴随阅读模式下，点击外部绝不自动收起，保障长文阅读顺畅
+    QCursor.setPos(500, 500)
+    companion_popup.dismiss_if_outside()
+    assert companion_popup.isVisible()
+    companion_popup.close()
 
 
 def test_popup_closed_signal(qapp):

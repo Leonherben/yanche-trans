@@ -30,6 +30,8 @@ class WindowsSelectionListener(BaseSelectionListener):
         enable_mouse_side_button: bool = True,
         on_empty_click: Optional[Callable[[Tuple[int, int]], None]] = None,
         is_inside_popup: Optional[Callable[[Tuple[int, int]], bool]] = None,
+        is_popup_visible: Optional[Callable[[], bool]] = None,
+        auto_popup_only_when_visible: bool = True,
     ) -> None:
         super().__init__(
             callback,
@@ -37,6 +39,8 @@ class WindowsSelectionListener(BaseSelectionListener):
             max_length,
             on_empty_click=on_empty_click,
             is_inside_popup=is_inside_popup,
+            is_popup_visible=is_popup_visible,
+            auto_popup_only_when_visible=auto_popup_only_when_visible,
         )
         self.debounce_ms = debounce_ms
         self.repeat_threshold_seconds = repeat_threshold_seconds
@@ -211,6 +215,9 @@ class WindowsSelectionListener(BaseSelectionListener):
 
                 if is_drag_selection or is_double_click:
                     if self.auto_popup:
+                        # 伴随阅读模式：仅在浮窗可见时才自动划词翻译
+                        if self.auto_popup_only_when_visible and self.is_popup_visible and not self.is_popup_visible():
+                            return
                         threading.Thread(
                             target=self._process_selection, args=(x, y, False), daemon=True
                         ).start()
@@ -228,6 +235,8 @@ class WindowsSelectionListener(BaseSelectionListener):
         if time.time() < self._close_cooldown_until:
             return
         if self.is_inside_popup and self.is_inside_popup((int(x), int(y))):
+            return
+        if not force and self.auto_popup_only_when_visible and self.is_popup_visible and not self.is_popup_visible():
             return
         raw_text = self._capture_selected_text_via_clipboard()
         sanitized = self.sanitize_text(raw_text)

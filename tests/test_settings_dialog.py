@@ -36,6 +36,8 @@ def test_settings_dialog_init(qapp, tmp_path):
     # 验证快捷键 Tab 预填
     assert dialog.main_hotkey_edit.text() == "<alt>+d"
     assert dialog.mouse_side_check.isChecked()
+    assert dialog.auto_popup_check.isChecked() is True
+    assert dialog.auto_popup_visible_only_check.isChecked() is True
 
     # 验证选项卡切换与更新 Tab
     dialog.switch_to_tab(3)
@@ -67,6 +69,7 @@ def test_settings_dialog_modify_and_save(qapp, tmp_path):
     dialog.main_hotkey_edit.setText("<alt>+f")
     dialog.new_hotkey_edit.setText("ctrl+alt+w")
     dialog.add_hotkey_btn.click()
+    dialog.auto_popup_visible_only_check.setChecked(False)
     assert dialog.extra_hotkeys_list.count() == 1
     assert dialog.extra_hotkeys_list.item(0).text() == "<ctrl>+<alt>+<w>"
 
@@ -86,6 +89,7 @@ def test_settings_dialog_modify_and_save(qapp, tmp_path):
     assert saved.providers["deepseek"].model == "deepseek-coder"
     assert saved.selection.hotkey == "<alt>+f"
     assert saved.selection.extra_hotkeys == ["<ctrl>+<alt>+<w>"]
+    assert saved.selection.auto_popup_only_when_visible is False
     assert saved.ui.window_opacity == 0.8
     assert saved.ui.auto_hide_seconds == 12
     assert saved.ui.open_on_startup is False

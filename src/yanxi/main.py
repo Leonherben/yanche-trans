@@ -154,6 +154,8 @@ class 言蹊翻译App(QObject):
                 enable_mouse_side_button=self.config.selection.enable_mouse_side_button,
                 on_empty_click=self.on_empty_click,
                 is_inside_popup=self.is_inside_popup,
+                is_popup_visible=self.popup.isVisible,
+                auto_popup_only_when_visible=self.config.selection.auto_popup_only_when_visible,
             )
             self.listeners.append(x11_listener)
 
@@ -168,6 +170,8 @@ class 言蹊翻译App(QObject):
                 enable_mouse_side_button=self.config.selection.enable_mouse_side_button,
                 on_empty_click=self.on_empty_click,
                 is_inside_popup=self.is_inside_popup,
+                is_popup_visible=self.popup.isVisible,
+                auto_popup_only_when_visible=self.config.selection.auto_popup_only_when_visible,
             )
             self.listeners.append(win_listener)
 
@@ -181,7 +185,7 @@ class 言蹊翻译App(QObject):
                 max_length=self.config.selection.max_length,
                 on_empty_click=self.on_empty_click,
                 get_x11_selection_fn=x11_listener.get_current_selection if x11_listener else None,
-                on_no_selection=lambda: QTimer.singleShot(0, self.popup.open_for_input),
+                on_no_selection=lambda: QTimer.singleShot(0, self._handle_no_selection_hotkey),
             )
             self.listeners.append(hotkey_listener)
 

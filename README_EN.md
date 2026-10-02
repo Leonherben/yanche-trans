@@ -52,12 +52,12 @@ Pre-compiled standalone packages are available for Windows and Linux with no Pyt
 
 | Action / Shortcut | Function | Description |
 | :--- | :--- | :--- |
-| `Alt + D` | Translate selection / Open query box | Translates selected text; opens input box if nothing is selected |
+| `Alt + D` | Translate selection / Toggle popup | Translates selected text; toggles popup display when no text is selected |
+| Mouse Selection Release | Companion Reading Mode | Auto-translates in-place when popup is open; stays completely silent when popup is closed |
 | Mouse Side Buttons | Selection Translation | Supported on most mice with X1/X2 side buttons |
-| Mouse Selection Release | Automatic Translation | Enable "Auto-Popup on Selection" in the tray menu |
 | Double-click Tray Icon | Open Query Box | Rapidly input text manually |
-| Tray Right-Click / Popup Menu | ⚙ Preferences | Open graphical settings for API keys, models, hotkeys & themes |
-| `Esc` | Dismiss Popup | Closes the floating window when active |
+| Tray Right-Click / Popup Menu | ⚙ Preferences | Open graphical settings for API keys, models, hotkeys, startup & themes |
+| `Esc` / Popup `✕` Button | Dismiss Popup | Closes the companion window and restores silent mode |
 | `Ctrl + Alt + Escape` | Panic Failsafe Exit | Global emergency shutdown shortcut |
 
 ---
