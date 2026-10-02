@@ -27,7 +27,8 @@ jobs:
           uv python install 3.12
           uv sync --frozen --dev
       - name: Test
-        run: uv run --no-sync pytest -q tests --tb=short
+        timeout-minutes: 3
+        run: uv run --no-sync pytest -vv -o faulthandler_timeout=45 tests --tb=short
       - name: Build Windows package
         run: uv run --no-sync python scripts/build.py --label ux-20261002
       - name: Verify packaged CLI
