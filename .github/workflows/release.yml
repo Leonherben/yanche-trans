@@ -40,7 +40,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxcb-cursor0 xsel libgl1-mesa-dev libegl1
+          sudo apt-get install -y libxcb-cursor0 xsel libgl1-mesa-dev libegl1 xvfb
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -53,7 +53,12 @@ jobs:
       - name: Install dependencies & PyInstaller
         run: uv sync --frozen --dev
 
-      - name: Build standalone release package
+      - name: Build standalone release package (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a uv run --no-sync python scripts/build.py
+
+      - name: Build standalone release package (Windows)
+        if: runner.os == 'Windows'
         run: uv run --no-sync python scripts/build.py
 
       - name: Upload release artifact

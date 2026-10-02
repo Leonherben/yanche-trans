@@ -40,6 +40,8 @@ def controller(qapp, monkeypatch):
             self.running = False
         def on_popup_closed(self):
             pass
+        def get_current_selection(self):
+            return ""
 
     config = AppConfig()
     config.ui.open_on_startup = False

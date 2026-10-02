@@ -220,7 +220,7 @@ class 言蹊翻译App(QObject):
                 min_length=self.config.selection.min_length,
                 max_length=self.config.selection.max_length,
                 on_empty_click=self.on_empty_click,
-                get_x11_selection_fn=x11_listener.get_current_selection if x11_listener else None,
+                get_x11_selection_fn=getattr(x11_listener, "get_current_selection", None) if x11_listener else None,
                 on_no_selection=self.input_requested.emit,
             )
             self.listeners.append(hotkey_listener)

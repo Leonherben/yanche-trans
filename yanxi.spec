@@ -27,6 +27,25 @@ if assets_dir.exists():
 is_win = sys.platform.startswith("win")
 is_linux = sys.platform.startswith("linux")
 
+pynput_modules = [
+    "pynput",
+    "pynput._util",
+    "pynput._util.xorg",
+    "pynput._util.xorg_keysyms",
+    "pynput._util.win32",
+    "pynput._util.win32_vks",
+    "pynput._util.uinput",
+    "pynput.keyboard",
+    "pynput.keyboard._base",
+    "pynput.keyboard._xorg",
+    "pynput.keyboard._win32",
+    "pynput.keyboard._uinput",
+    "pynput.mouse",
+    "pynput.mouse._base",
+    "pynput.mouse._xorg",
+    "pynput.mouse._win32",
+]
+
 hiddenimports = [
     "yanxi",
     "yanxi.main",
@@ -54,7 +73,10 @@ hiddenimports = [
     "httpx",
     "pydantic",
     "pydantic_core",
-] + collect_submodules("pynput")
+] + pynput_modules + collect_submodules("pynput")
+
+if is_linux:
+    hiddenimports += collect_submodules("Xlib")
 
 icon_file = str(assets_dir / "icon.ico") if is_win else str(assets_dir / "icon.png")
 if not os.path.exists(icon_file):
