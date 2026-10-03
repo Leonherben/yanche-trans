@@ -10,7 +10,7 @@ import threading
 from typing import Optional
 
 from PySide6.QtCore import QObject, QUrl, Signal, Slot
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QMediaDevices
 
 from yanxi.core.tts import AccentType, TTSManager
 
@@ -34,7 +34,12 @@ class AudioPlayer(QObject):
         self._player = QMediaPlayer(self)
         self._output = QAudioOutput(self)
         self._player.setAudioOutput(self._output)
-        self._output.setVolume(1.0)
+        self._output.setVolume(0.85)
+
+        # 动态绑定系统默认音频输出设备，跟随系统插拔耳机/切换蓝牙/扬声器
+        self._media_devices = QMediaDevices(self)
+        self._media_devices.audioOutputsChanged.connect(self._sync_default_output_device)
+        self._sync_default_output_device()
 
         self._active_accent: str = ""
         self._active_channel: str = ""  # "orig" | "trans"
@@ -111,12 +116,24 @@ class AudioPlayer(QObject):
                 self._active_accent = ""
         self.playback_failed.emit(accent, err_msg)
 
+    def _sync_default_output_device(self) -> None:
+        """保持音频输出设备与操作系统当前默认输出设备严格同步（支持耳机/蓝牙热插拔）"""
+        try:
+            default_dev = self._media_devices.defaultAudioOutput()
+            current_dev = self._output.device()
+            if default_dev and (not current_dev or default_dev.id() != current_dev.id()):
+                self._output.setDevice(default_dev)
+                logger.debug("Synced audio output device to: %s", default_dev.description())
+        except Exception as e:
+            logger.debug("Audio device sync failed: %s", e)
+
     def _play_file(self, file_path: str, accent: str, req_id: int) -> None:
         with self._lock:
             if req_id != self._request_seq:
                 return
             self._active_accent = accent
 
+        self._sync_default_output_device()
         self._player.stop()
         self._player.setSource(QUrl.fromLocalFile(file_path))
         self._player.play()
